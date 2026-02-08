@@ -8,7 +8,7 @@
 
 <br/>
 
-<img src="./logo.png" alt="Figma MCP Bridge" align="center" />
+<img src="https://raw.githubusercontent.com/gethopp/figma-mcp-bridge/main/logo.png" alt="Figma MCP Bridge" align="center" />
 
 <br/>
 
