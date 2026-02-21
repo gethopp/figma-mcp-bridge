@@ -65,8 +65,8 @@ jobs:
       - name: Publish to npm (with provenance)
         working-directory: server
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # env:
+        #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # ── Figma plugin: install, build ─────────────────────────────────
 
