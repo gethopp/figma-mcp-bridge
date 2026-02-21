@@ -24,7 +24,7 @@ const toHex = (color: RGB): string => {
 };
 
 const serializePaints = (paints?: readonly Paint[]) => {
-  if (!paints) {
+  if (!paints || !Array.isArray(paints)) {
     return [];
   }
   return paints
