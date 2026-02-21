@@ -69,11 +69,11 @@ const serializeText = (node: TextNode, base: SerializedNode) => {
 
 const serializeStyles = (node: SceneNode) => {
   const styles: Record<string, unknown> = {};
-  if ("fills" in node) {
-    styles.fills = serializePaints(node.fills as readonly Paint[]);
+  if ("fills" in node && Array.isArray(node.fills)) {
+    styles.fills = serializePaints(node.fills);
   }
   if ("strokes" in node) {
-    styles.strokes = serializePaints(node.strokes as readonly Paint[]);
+    styles.strokes = serializePaints(node.strokes);
   }
   if ("cornerRadius" in node) {
     styles.cornerRadius = node.cornerRadius;

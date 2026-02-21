@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Node } from "./node.js";
 import { Election } from "./election.js";
 import { registerTools } from "./tools.js";
+import { VERSION } from "./version.js";
 
 const PORT = 1994;
 
@@ -27,7 +28,7 @@ async function main(): Promise<void> {
   // Create MCP server (stdio transport)
   const server = new McpServer({
     name: "figma-bridge",
-    version: "0.1.0",
+    version: VERSION,
   });
 
   registerTools(server, node);

@@ -1,7 +1,9 @@
 import http from "node:http";
 import type { Duplex } from "node:stream";
 import { Bridge } from "./bridge.js";
+import { validateRpc } from "./schema.js";
 import type { RPCRequest, RPCResponse } from "./types.js";
+import { VERSION } from "./version.js";
 
 /**
  * Leader owns the WebSocket bridge to Figma and exposes HTTP endpoints for followers.
@@ -27,7 +29,7 @@ export class Leader {
       const server = http.createServer((req, res) => {
         if (req.url === "/ping" && req.method === "GET") {
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ status: "ok", version: "0.1.0" }));
+          res.end(JSON.stringify({ status: "ok", version: VERSION }));
           return;
         }
 
@@ -48,7 +50,7 @@ export class Leader {
           } else {
             socket.destroy();
           }
-        }
+        },
       );
 
       // Fail fast if port is already in use
@@ -56,7 +58,7 @@ export class Leader {
         reject(
           err.code === "EADDRINUSE"
             ? new Error(`Port ${this.port} already in use`)
-            : err
+            : err,
         );
       });
 
@@ -68,10 +70,7 @@ export class Leader {
     });
   }
 
-  private handleRPC(
-    req: http.IncomingMessage,
-    res: http.ServerResponse
-  ): void {
+  private handleRPC(req: http.IncomingMessage, res: http.ServerResponse): void {
     let body = "";
     req.on("data", (chunk: Buffer) => {
       body += chunk.toString();
@@ -79,26 +78,43 @@ export class Leader {
     req.on("end", async () => {
       try {
         const rpcReq: RPCRequest = JSON.parse(body);
+
+        const validationError = validateRpc(
+          rpcReq.tool,
+          rpcReq.nodeIds,
+          rpcReq.params,
+        );
+        if (validationError) {
+          this.sendJSON(res, 400, { error: validationError });
+          return;
+        }
+
         const resp = await this.bridge.sendWithParams(
           rpcReq.tool,
           rpcReq.nodeIds,
-          rpcReq.params
+          rpcReq.params,
         );
 
-        const rpcResp: RPCResponse = resp.error
-          ? { error: resp.error }
-          : { data: resp.data };
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(rpcResp));
+        this.sendJSON(
+          res,
+          200,
+          resp.error ? { error: resp.error } : { data: resp.data },
+        );
       } catch (err) {
-        const rpcResp: RPCResponse = {
+        this.sendJSON(res, 200, {
           error: err instanceof Error ? err.message : String(err),
-        };
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(rpcResp));
+        });
       }
     });
+  }
+
+  private sendJSON(
+    res: http.ServerResponse,
+    status: number,
+    body: RPCResponse,
+  ): void {
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(body));
   }
 
   stop(): void {
