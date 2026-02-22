@@ -1,5 +1,7 @@
 # Figma MCP Bridge
 
+[![Pairing with Hopp](https://gethopp.app/git/hopp-shield.svg?ref=hopp-repo)](https://gethopp.app)
+
 - [Demo](#demo)
 - [Quick Start](#quick-start)
 - [Local development](#local-development)
