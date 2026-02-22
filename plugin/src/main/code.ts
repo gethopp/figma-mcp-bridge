@@ -279,13 +279,16 @@ const handleRequest = async (
               format === "SVG"
                 ? { format: "SVG" }
                 : format === "PDF"
-                ? { format: "PDF" }
-                : format === "JPG"
-                ? { format: "JPG", constraint: { type: "SCALE", value: scale } }
-                : {
-                    format: "PNG",
-                    constraint: { type: "SCALE", value: scale },
-                  };
+                  ? { format: "PDF" }
+                  : format === "JPG"
+                    ? {
+                        format: "JPG",
+                        constraint: { type: "SCALE", value: scale },
+                      }
+                    : {
+                        format: "PNG",
+                        constraint: { type: "SCALE", value: scale },
+                      };
 
             const bytes = await node.exportAsync(settings);
             const base64 = figma.base64Encode(bytes);
@@ -335,6 +338,14 @@ figma.ui.onmessage = async (message) => {
 
   if (message.type === "server-request") {
     const response = await handleRequest(message.payload as ServerRequest);
-    figma.ui.postMessage(response);
+    try {
+      figma.ui.postMessage(response);
+    } catch (err) {
+      figma.ui.postMessage({
+        type: response.type,
+        requestId: response.requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 };
