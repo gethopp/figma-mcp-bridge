@@ -16,6 +16,8 @@ type SerializedNode = {
   childCount?: number;
 };
 
+const isMixed = (value: unknown): value is symbol => typeof value === "symbol";
+
 const toHex = (color: RGB): string => {
   const clamp = (value: number) =>
     Math.min(255, Math.max(0, Math.round(value * 255)));
@@ -23,9 +25,9 @@ const toHex = (color: RGB): string => {
   return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 };
 
-const serializePaints = (paints?: readonly Paint[]) => {
-  if (!paints || !Array.isArray(paints)) {
-    return [];
+const serializePaints = (paints: readonly Paint[] | symbol | undefined) => {
+  if (isMixed(paints) || !paints || !Array.isArray(paints)) {
+    return isMixed(paints) ? "mixed" : [];
   }
   return paints
     .filter((paint) => paint.type === "SOLID" && "color" in paint)
@@ -60,23 +62,27 @@ const serializeText = (node: TextNode, base: SerializedNode) => {
     characters: node.characters,
     styles: {
       ...base.styles,
-      fontSize: node.fontSize,
+      fontSize: isMixed(node.fontSize) ? "mixed" : node.fontSize,
       fontFamily: font,
-      textAlignHorizontal: node.textAlignHorizontal,
+      textAlignHorizontal: isMixed(node.textAlignHorizontal)
+        ? "mixed"
+        : node.textAlignHorizontal,
     },
   };
 };
 
 const serializeStyles = (node: SceneNode) => {
   const styles: Record<string, unknown> = {};
-  if ("fills" in node && Array.isArray(node.fills)) {
+  if ("fills" in node) {
     styles.fills = serializePaints(node.fills);
   }
   if ("strokes" in node) {
     styles.strokes = serializePaints(node.strokes);
   }
   if ("cornerRadius" in node) {
-    styles.cornerRadius = node.cornerRadius;
+    styles.cornerRadius = isMixed(node.cornerRadius)
+      ? "mixed"
+      : node.cornerRadius;
   }
   if ("paddingLeft" in node) {
     styles.padding = {
