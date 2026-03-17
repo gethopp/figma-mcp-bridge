@@ -12,6 +12,8 @@
 
 <img src="https://raw.githubusercontent.com/gethopp/figma-mcp-bridge/main/logo.png" alt="Figma MCP Bridge" align="center" />
 
+[![Figma Bridge MCP server](https://glama.ai/mcp/servers/gethopp/figma-mcp-bridge/badges/card.svg)](https://glama.ai/mcp/servers/gethopp/figma-mcp-bridge)
+
 <br/>
 
 While other amazing Figma MCP servers like [Figma-Context-MCP](https://github.com/GLips/Figma-Context-MCP/) exist, one issues is the [API limiting](https://github.com/GLips/Figma-Context-MCP/issues/258) for free users.
