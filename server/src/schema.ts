@@ -76,12 +76,14 @@ export const toolInputSchemas = {
   get_node: z.object({
     nodeId: figmaNodeId.describe("The node ID to fetch"),
   }),
+
   get_design_context: z.object({
     depth: z
       .number()
       .optional()
       .describe("How many levels deep to traverse the node tree (default 2)"),
   }),
+
   get_screenshot: z.object({
     nodeIds: z
       .array(figmaNodeId)
@@ -97,6 +99,7 @@ export const toolInputSchemas = {
       .optional()
       .describe("Export scale for raster formats (default 2)"),
   }),
+
   save_screenshots: z.object({
     items: z
       .array(
@@ -106,7 +109,7 @@ export const toolInputSchemas = {
             .string()
             .min(1)
             .describe(
-              "Output file path (relative paths resolve from the MCP server current working directory)"
+              "Output file path (relative paths resolve from the MCP server current working directory)",
             ),
           format: exportFormat.optional(),
           scale: z.number().optional(),
@@ -199,6 +202,11 @@ export const toolInputSchemas = {
 
 type ToolName = keyof typeof toolInputSchemas;
 
+/**
+ * Maps the RPC wire format { tool, nodeIds?, params? } to each tool's
+ * expected input shape. Typed as Record<ToolName, ...> so adding a schema
+ * without a mapper is a compile error.
+ */
 const rpcToArgs: Record<
   ToolName,
   (nodeIds?: string[], params?: Record<string, unknown>) => unknown
@@ -226,16 +234,20 @@ const rpcToArgs: Record<
   batch_mutation: (_nodeIds, params) => ({ ...params }),
 };
 
+/**
+ * Validate an RPC request against the corresponding tool's input schema.
+ * Returns an error string on failure, null if valid or no schema exists for the tool.
+ */
 export function validateRpc(
   tool: string,
   nodeIds?: string[],
-  params?: Record<string, unknown>
+  params?: Record<string, unknown>,
 ): string | null {
   if (!(tool in toolInputSchemas)) return null;
 
   const name = tool as ToolName;
   const result = toolInputSchemas[name].safeParse(
-    rpcToArgs[name](nodeIds, params)
+    rpcToArgs[name](nodeIds, params),
   );
   return result.success ? null : result.error.issues[0].message;
 }
