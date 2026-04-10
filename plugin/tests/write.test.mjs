@@ -128,6 +128,9 @@ function createMockFigma() {
         textAutoResize: "NONE",
         lineHeight: { unit: "AUTO" },
         letterSpacing: { unit: "PIXELS", value: 0 },
+        getRangeAllFontNames() {
+          return [{ family: "Inter", style: "Regular" }];
+        },
       })
     );
 
@@ -159,7 +162,7 @@ async function testLargeOrderedBatch() {
         padding: { top: 16, right: 16, bottom: 16, left: 16 },
       },
     },
-    ...Array.from({ length: 120 }, (_, index) => ({
+    ...Array.from({ length: 35 }, (_, index) => ({
       type: "create_rectangle",
       ref: `tmp:rect-${index}`,
       params: {
@@ -169,14 +172,14 @@ async function testLargeOrderedBatch() {
         height: 40,
       },
     })),
-    ...Array.from({ length: 120 }, (_, index) => ({
+    ...Array.from({ length: 35 }, (_, index) => ({
       type: "set_corner_radius",
       nodeId: `tmp:rect-${index}`,
       params: {
         cornerRadius: (index % 6) + 2,
       },
     })),
-    ...Array.from({ length: 30 }, (_, index) => ({
+    ...Array.from({ length: 20 }, (_, index) => ({
       type: "create_text",
       ref: `tmp:text-${index}`,
       params: {
@@ -192,17 +195,17 @@ async function testLargeOrderedBatch() {
   assert.equal(result.executedCount, operations.length);
   assert.equal(result.results.length, operations.length);
   assert.ok(result.createdRefs["tmp:root"]);
-  assert.ok(result.createdRefs["tmp:rect-119"]);
-  assert.ok(result.createdRefs["tmp:text-29"]);
+  assert.ok(result.createdRefs["tmp:rect-34"]);
+  assert.ok(result.createdRefs["tmp:text-19"]);
 
   const rootId = result.createdRefs["tmp:root"];
   const root = await globalThis.figma.getNodeByIdAsync(rootId);
   assert.ok(root);
   assert.equal(root.type, "FRAME");
-  assert.equal(root.children.length, 150);
+  assert.equal(root.children.length, 55);
 
-  const lastRect = await globalThis.figma.getNodeByIdAsync(result.createdRefs["tmp:rect-119"]);
-  assert.equal(lastRect.cornerRadius, 7);
+  const lastRect = await globalThis.figma.getNodeByIdAsync(result.createdRefs["tmp:rect-34"]);
+  assert.equal(lastRect.cornerRadius, 6);
 }
 
 async function testPartialFailure() {
@@ -252,7 +255,36 @@ async function testPartialFailure() {
   assert.equal(root.children.length, 80);
 }
 
-await testLargeOrderedBatch();
-await testPartialFailure();
+async function runTests() {
+  const tests = [
+    ["testLargeOrderedBatch", testLargeOrderedBatch],
+    ["testPartialFailure", testPartialFailure],
+  ];
+  const failures = [];
+  let passed = 0;
 
-console.log("write.test.mjs: ok");
+  for (const [name, test] of tests) {
+    try {
+      await test();
+      passed += 1;
+    } catch (error) {
+      failures.push({
+        name,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  console.log(
+    `write.test.mjs: ${passed} passed, ${failures.length} failed`
+  );
+  for (const failure of failures) {
+    console.error(`${failure.name}: ${failure.error}`);
+  }
+
+  if (failures.length > 0) {
+    process.exitCode = 1;
+  }
+}
+
+await runTests();

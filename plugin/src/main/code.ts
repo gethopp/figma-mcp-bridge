@@ -46,6 +46,17 @@ type PluginResponse = {
   error?: string;
 };
 
+const READ_REQUEST_TYPES = new Set<RequestType>([
+  "get_document",
+  "get_selection",
+  "get_node",
+  "get_styles",
+  "get_metadata",
+  "get_design_context",
+  "get_variable_defs",
+  "get_screenshot",
+]);
+
 const sendStatus = () => {
   figma.ui.postMessage({
     type: "plugin-status",
@@ -368,15 +379,7 @@ const handleRequest = async (
         throw new Error(`Unknown request type: ${request.type}`);
     }
   } catch (error) {
-    const isWriteRequest =
-      request.type !== "get_document" &&
-      request.type !== "get_selection" &&
-      request.type !== "get_node" &&
-      request.type !== "get_styles" &&
-      request.type !== "get_metadata" &&
-      request.type !== "get_design_context" &&
-      request.type !== "get_variable_defs" &&
-      request.type !== "get_screenshot";
+    const isWriteRequest = !READ_REQUEST_TYPES.has(request.type);
     return {
       type: request.type,
       requestId: request.requestId,

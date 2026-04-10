@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { z } from "zod";
 import type { Node } from "./node.js";
 import { toolInputSchemas } from "./schema.js";
 import type { BridgeResponse } from "./types.js";
@@ -48,6 +49,27 @@ interface SaveScreenshotItemResult {
   success: boolean;
   error?: string;
 }
+
+type WriteToolName = keyof Pick<
+  typeof toolInputSchemas,
+  | "create_frame"
+  | "create_text"
+  | "create_rectangle"
+  | "append_children"
+  | "find_nodes"
+  | "batch_mutation"
+  | "set_position"
+  | "set_size"
+  | "set_fills"
+  | "set_strokes"
+  | "set_corner_radius"
+  | "set_text_content"
+  | "set_text_style"
+  | "set_layout_mode"
+  | "set_padding"
+  | "set_item_spacing"
+  | "delete_node"
+>;
 
 export function registerTools(server: McpServer, node: Node): void {
   server.tool(
@@ -152,20 +174,21 @@ export function registerTools(server: McpServer, node: Node): void {
     }
   );
 
-  const registerWriteTool = (
-    name: string,
+  const registerWriteTool = <N extends WriteToolName>(
+    name: N,
     description: string,
     handler: (
-      args: Record<string, unknown>
+      args: z.infer<(typeof toolInputSchemas)[N]>
     ) => Promise<BridgeResponse>
   ): void => {
     server.tool(
       name,
       description,
-      (toolInputSchemas as Record<string, { shape: Record<string, unknown> }>)[name]
-        .shape,
-      async (args): Promise<ToolResult> => {
-        return renderResponse(() => handler(args as Record<string, unknown>));
+      toolInputSchemas[name].shape,
+      async (args: z.infer<(typeof toolInputSchemas)[N]>): Promise<ToolResult> => {
+        return renderResponse(() =>
+          handler(args)
+        );
       }
     );
   };

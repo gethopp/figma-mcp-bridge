@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"vite build --watch\" \"vite build --watch -c vite.config.main.ts\"",
     "build": "vite build && vite build -c vite.config.main.ts",
-    "test": "tsc -p tsconfig.test.json && powershell -Command \"(Get-Content dist-test\\src\\main\\write.js) -replace '\\\"./serializer\\\"', '\\\"./serializer.js\\\"' | Set-Content dist-test\\src\\main\\write.js\" && node tests/write.test.mjs"
+    "test": "tsc -p tsconfig.test.json && node scripts/fix-test-imports.mjs && node tests/write.test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

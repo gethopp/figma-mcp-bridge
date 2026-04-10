@@ -224,13 +224,34 @@ function applyItemSpacing(node: SceneNode, itemSpacing: unknown): void {
 }
 
 async function loadFont(node: TextNode, style?: Record<string, unknown>): Promise<FontName> {
-  const current =
-    typeof node.fontName === "symbol"
-      ? { family: "Inter", style: "Regular" }
-      : node.fontName;
+  const fontFamily = getOptionalString(style?.fontFamily);
+  const fontStyle = getOptionalString(style?.fontStyle);
+
+  if (typeof node.fontName === "symbol") {
+    if (fontFamily || fontStyle) {
+      const base = node.getRangeAllFontNames(0, node.characters.length)[0] ?? {
+        family: "Inter",
+        style: "Regular",
+      };
+      const font: FontName = {
+        family: fontFamily ?? base.family,
+        style: fontStyle ?? base.style,
+      };
+      await figma.loadFontAsync(font);
+      return font;
+    }
+
+    const fonts = node.getRangeAllFontNames(0, node.characters.length);
+    const uniqueFonts = new Map(fonts.map((font) => [`${font.family}::${font.style}`, font]));
+    for (const font of uniqueFonts.values()) {
+      await figma.loadFontAsync(font);
+    }
+    return fonts[0] ?? { family: "Inter", style: "Regular" };
+  }
+
   const font: FontName = {
-    family: getOptionalString(style?.fontFamily) ?? current.family,
-    style: getOptionalString(style?.fontStyle) ?? current.style,
+    family: fontFamily ?? node.fontName.family,
+    style: fontStyle ?? node.fontName.style,
   };
   await figma.loadFontAsync(font);
   return font;
@@ -241,7 +262,10 @@ async function applyTextStyle(node: TextNode, style: unknown): Promise<void> {
   if (!isObject(style)) {
     fail("INVALID_INPUT", "style must be an object");
   }
-  node.fontName = await loadFont(node, style);
+  const nextFont = await loadFont(node, style);
+  if (getOptionalString(style.fontFamily) || getOptionalString(style.fontStyle)) {
+    node.fontName = nextFont;
+  }
   if (typeof style.fontSize === "number") node.fontSize = style.fontSize;
   if (typeof style.textDecoration === "string") {
     node.textDecoration = style.textDecoration as TextDecoration;
@@ -281,7 +305,10 @@ async function applyTextStyle(node: TextNode, style: unknown): Promise<void> {
 
 async function applyTextContent(node: TextNode, characters: unknown): Promise<void> {
   await loadFont(node);
-  node.characters = getString(characters, "characters");
+  if (characters !== undefined && characters !== null && typeof characters !== "string") {
+    fail("INVALID_INPUT", "characters must be a string");
+  }
+  node.characters = typeof characters === "string" ? characters : "";
 }
 
 function toMutationResult(node: SceneNode): MutationResult {
@@ -298,46 +325,61 @@ function toMutationResult(node: SceneNode): MutationResult {
 async function createFrame(params: RequestParams): Promise<MutationResult> {
   const parent = await getParentNode(getOptionalString(params?.parentId));
   const node = figma.createFrame();
-  setName(node, params?.name, "Frame");
-  applyPosition(node, params);
-  applySize(node, params);
-  applyFills(node, params?.fills);
-  applyStrokes(node, params?.strokes);
-  applyCornerRadius(node, params?.cornerRadius);
-  applyLayoutMode(node, params?.layoutMode);
-  applyPadding(node, params?.padding);
-  applyItemSpacing(node, params?.itemSpacing);
-  setPluginData(node, getOptionalString(params?.key));
-  parent.appendChild(node);
-  return toMutationResult(node);
+  try {
+    setName(node, params?.name, "Frame");
+    applyPosition(node, params);
+    applySize(node, params);
+    applyFills(node, params?.fills);
+    applyStrokes(node, params?.strokes);
+    applyCornerRadius(node, params?.cornerRadius);
+    applyLayoutMode(node, params?.layoutMode);
+    applyPadding(node, params?.padding);
+    applyItemSpacing(node, params?.itemSpacing);
+    setPluginData(node, getOptionalString(params?.key));
+    parent.appendChild(node);
+    return toMutationResult(node);
+  } catch (error) {
+    node.remove();
+    throw error;
+  }
 }
 
 async function createText(params: RequestParams): Promise<MutationResult> {
   const parent = await getParentNode(getOptionalString(params?.parentId));
   const node = figma.createText();
-  setName(node, params?.name, "Text");
-  applyPosition(node, params);
-  applySize(node, params);
-  await applyTextStyle(node, params?.style);
-  await applyTextContent(node, params?.characters ?? "");
-  applyFills(node, params?.fills);
-  setPluginData(node, getOptionalString(params?.key));
-  parent.appendChild(node);
-  return toMutationResult(node);
+  try {
+    setName(node, params?.name, "Text");
+    applyPosition(node, params);
+    applySize(node, params);
+    await applyTextStyle(node, params?.style);
+    await applyTextContent(node, params?.characters);
+    applyFills(node, params?.fills);
+    setPluginData(node, getOptionalString(params?.key));
+    parent.appendChild(node);
+    return toMutationResult(node);
+  } catch (error) {
+    node.remove();
+    throw error;
+  }
 }
 
 async function createRectangle(params: RequestParams): Promise<MutationResult> {
   const parent = await getParentNode(getOptionalString(params?.parentId));
   const node = figma.createRectangle();
-  setName(node, params?.name, "Rectangle");
-  applyPosition(node, params);
-  applySize(node, params);
-  applyFills(node, params?.fills);
-  applyStrokes(node, params?.strokes);
-  applyCornerRadius(node, params?.cornerRadius);
-  setPluginData(node, getOptionalString(params?.key));
-  parent.appendChild(node);
-  return toMutationResult(node);
+  try {
+    setName(node, params?.name, "Rectangle");
+    applyPosition(node, params);
+    applySize(node, params);
+    applyFills(node, params?.fills);
+    applyStrokes(node, params?.strokes);
+    applyCornerRadius(node, params?.cornerRadius);
+    setPluginData(node, getOptionalString(params?.key));
+    parent.appendChild(node);
+    return toMutationResult(node);
+  } catch (error) {
+    node.remove();
+    throw error;
+  }
 }
 
 async function appendChildren(params: RequestParams): Promise<unknown> {
@@ -442,7 +484,7 @@ async function executeWrite(type: string, nodeIds: string[] | undefined, params:
     case "set_layout_mode":
       return mutateNode(merged, (node) => applyLayoutMode(node, merged.layoutMode));
     case "set_padding":
-      return mutateNode(merged, (node) => applyPadding(node, merged));
+      return mutateNode(merged, (node) => applyPadding(node, merged.padding ?? merged));
     case "set_item_spacing":
       return mutateNode(merged, (node) => applyItemSpacing(node, merged.itemSpacing));
     case "find_nodes":

@@ -64,8 +64,27 @@ const paddingSchema = z.object({
   left: z.number().nonnegative().optional(),
 });
 
+export const batchOperationType = z.enum([
+  "create_frame",
+  "create_text",
+  "create_rectangle",
+  "append_children",
+  "set_position",
+  "set_size",
+  "set_fills",
+  "set_strokes",
+  "set_corner_radius",
+  "set_text_content",
+  "set_text_style",
+  "set_layout_mode",
+  "set_padding",
+  "set_item_spacing",
+  "find_nodes",
+  "delete_node",
+]);
+
 const batchOperation = z.object({
-  type: z.string().min(1),
+  type: batchOperationType,
   nodeId: z.string().optional(),
   nodeIds: z.array(z.string()).optional(),
   params: z.record(z.string(), z.unknown()).optional(),
