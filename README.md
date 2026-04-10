@@ -68,6 +68,25 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `get_variable_defs` | Get all variable collections, modes, and values (design tokens) |
 | `get_screenshot` | Export nodes as PNG/SVG/JPG/PDF (base64-encoded) |
 | `save_screenshots` | Export and save screenshots directly to the local filesystem |
+| `create_frame` | Create a frame on the current page |
+| `create_text` | Create a text node on the current page |
+| `create_rectangle` | Create a rectangle on the current page |
+| `append_children` | Re-parent existing child nodes under a parent |
+| `find_nodes` | Find nodes on the current page by ID, name, key, or parent |
+| `set_position` | Set node position |
+| `set_size` | Set node size |
+| `set_fills` | Set node fills using supported solid paints |
+| `set_strokes` | Set node strokes using supported solid paints |
+| `set_corner_radius` | Set uniform corner radius |
+| `set_text_content` | Set text content |
+| `set_text_style` | Set text style |
+| `set_layout_mode` | Set auto-layout mode |
+| `set_padding` | Set auto-layout padding |
+| `set_item_spacing` | Set auto-layout item spacing |
+| `delete_node` | Delete a node |
+| `batch_mutation` | Execute up to 100 write operations in order, with temporary refs for multi-step generation |
+
+Write tools are intentionally scoped to the current page and a deterministic subset of Figma mutations so AI-driven edits remain easier to validate and safer to automate.
 
 ## Local development
 
@@ -104,19 +123,26 @@ For local development, add the following to your AI tool's MCP config:
 
 ## Structure
 
-```
+```text
 Figma-MCP-Bridge/
-├── plugin/   # Figma plugin (TypeScript/React)
-└── server/   # MCP server (TypeScript/Node.js)
-    └── src/
-        ├── index.ts      # Entry point
-        ├── bridge.ts     # WebSocket bridge to Figma plugin
-        ├── leader.ts     # Leader: HTTP server + bridge
-        ├── follower.ts   # Follower: proxies to leader via HTTP
-        ├── node.ts       # Dynamic leader/follower role switching
-        ├── election.ts   # Leader election & health monitoring
-        ├── tools.ts      # MCP tool definitions
-        └── types.ts      # Shared types
+|-- plugin/                    # Figma plugin (TypeScript/React)
+|   `-- src/
+|       |-- ui/                # Plugin UI shown inside Figma
+|       `-- main/
+|           |-- code.ts        # Plugin runtime entry point and RPC dispatch
+|           |-- serializer.ts  # Read-side node/style serialization
+|           `-- write.ts       # Write-side mutation engine and batch execution
+`-- server/                    # MCP server (TypeScript/Node.js)
+    `-- src/
+        |-- index.ts           # Entry point
+        |-- bridge.ts          # WebSocket bridge to Figma plugin
+        |-- leader.ts          # Leader: HTTP server + bridge
+        |-- follower.ts        # Follower: proxies to leader via HTTP
+        |-- node.ts            # Dynamic leader/follower role switching
+        |-- election.ts        # Leader election & health monitoring
+        |-- schema.ts          # Zod schemas for read/write tool inputs
+        |-- tools.ts           # MCP tool registration for read/write operations
+        `-- types.ts           # Shared transport types
 ```
 
 ## How it works

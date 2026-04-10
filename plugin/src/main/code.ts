@@ -1,4 +1,5 @@
 import { serializeNode } from "./serializer";
+import { handleWriteRequest, serializeWriteError } from "./write";
 
 type RequestType =
   | "get_document"
@@ -8,7 +9,24 @@ type RequestType =
   | "get_metadata"
   | "get_design_context"
   | "get_variable_defs"
-  | "get_screenshot";
+  | "get_screenshot"
+  | "create_frame"
+  | "create_text"
+  | "create_rectangle"
+  | "append_children"
+  | "set_position"
+  | "set_size"
+  | "set_fills"
+  | "set_strokes"
+  | "set_corner_radius"
+  | "set_text_content"
+  | "set_text_style"
+  | "set_layout_mode"
+  | "set_padding"
+  | "set_item_spacing"
+  | "find_nodes"
+  | "delete_node"
+  | "batch_mutation";
 
 type ServerRequest = {
   type: RequestType;
@@ -67,7 +85,7 @@ const handleRequest = async (
         return {
           type: request.type,
           requestId: request.requestId,
-          data: serializeNode(figma.currentPage),
+          data: serializeNode(figma.currentPage as unknown as SceneNode),
         };
       case "get_selection":
         return {
@@ -148,7 +166,7 @@ const handleRequest = async (
       case "get_design_context": {
         const depth = request.params?.depth ?? 2;
         const serializeWithDepth = async (
-          node: unknown,
+          node: SceneNode,
           currentDepth: number
         ): Promise<ReturnType<typeof serializeNode>> => {
           const serialized = serializeNode(node);
@@ -320,14 +338,53 @@ const handleRequest = async (
           },
         };
       }
+      case "create_frame":
+      case "create_text":
+      case "create_rectangle":
+      case "append_children":
+      case "set_position":
+      case "set_size":
+      case "set_fills":
+      case "set_strokes":
+      case "set_corner_radius":
+      case "set_text_content":
+      case "set_text_style":
+      case "set_layout_mode":
+      case "set_padding":
+      case "set_item_spacing":
+      case "find_nodes":
+      case "delete_node":
+      case "batch_mutation":
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await handleWriteRequest(
+            request.type,
+            request.nodeIds,
+            request.params as Record<string, unknown> | undefined
+          ),
+        };
       default:
         throw new Error(`Unknown request type: ${request.type}`);
     }
   } catch (error) {
+    const isWriteRequest =
+      request.type !== "get_document" &&
+      request.type !== "get_selection" &&
+      request.type !== "get_node" &&
+      request.type !== "get_styles" &&
+      request.type !== "get_metadata" &&
+      request.type !== "get_design_context" &&
+      request.type !== "get_variable_defs" &&
+      request.type !== "get_screenshot";
     return {
       type: request.type,
       requestId: request.requestId,
-      error: error instanceof Error ? error.message : String(error),
+      error: isWriteRequest
+        ? JSON.stringify(serializeWriteError(error))
+        : error instanceof Error
+          ? error.message
+          : String(error),
     };
   }
 };

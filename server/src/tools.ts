@@ -151,6 +151,89 @@ export function registerTools(server: McpServer, node: Node): void {
       }
     }
   );
+
+  const registerWriteTool = (
+    name: string,
+    description: string,
+    handler: (
+      args: Record<string, unknown>
+    ) => Promise<BridgeResponse>
+  ): void => {
+    server.tool(
+      name,
+      description,
+      (toolInputSchemas as Record<string, { shape: Record<string, unknown> }>)[name]
+        .shape,
+      async (args): Promise<ToolResult> => {
+        return renderResponse(() => handler(args as Record<string, unknown>));
+      }
+    );
+  };
+
+  registerWriteTool("create_frame", "Create a frame.", (args) =>
+    node.sendWithParams("create_frame", undefined, args)
+  );
+  registerWriteTool("create_text", "Create a text node.", (args) =>
+    node.sendWithParams("create_text", undefined, args)
+  );
+  registerWriteTool("create_rectangle", "Create a rectangle.", (args) =>
+    node.sendWithParams("create_rectangle", undefined, args)
+  );
+  registerWriteTool("append_children", "Append existing child nodes to a parent.", (args) =>
+    node.sendWithParams("append_children", undefined, args)
+  );
+  registerWriteTool("find_nodes", "Find nodes on the current page.", (args) =>
+    node.sendWithParams("find_nodes", undefined, args)
+  );
+  registerWriteTool("batch_mutation", "Execute write operations in order.", (args) =>
+    node.sendWithParams("batch_mutation", undefined, args)
+  );
+
+  registerWriteTool("set_position", "Set node position.", ({ nodeId, ...args }) =>
+    node.sendWithParams("set_position", [String(nodeId)], args)
+  );
+  registerWriteTool("set_size", "Set node size.", ({ nodeId, ...args }) =>
+    node.sendWithParams("set_size", [String(nodeId)], args)
+  );
+  registerWriteTool("set_fills", "Set node fills.", ({ nodeId, ...args }) =>
+    node.sendWithParams("set_fills", [String(nodeId)], args)
+  );
+  registerWriteTool("set_strokes", "Set node strokes.", ({ nodeId, ...args }) =>
+    node.sendWithParams("set_strokes", [String(nodeId)], args)
+  );
+  registerWriteTool(
+    "set_corner_radius",
+    "Set uniform corner radius.",
+    ({ nodeId, ...args }) =>
+      node.sendWithParams("set_corner_radius", [String(nodeId)], args)
+  );
+  registerWriteTool(
+    "set_text_content",
+    "Set text content.",
+    ({ nodeId, ...args }) =>
+      node.sendWithParams("set_text_content", [String(nodeId)], args)
+  );
+  registerWriteTool("set_text_style", "Set text style.", ({ nodeId, ...args }) =>
+    node.sendWithParams("set_text_style", [String(nodeId)], args)
+  );
+  registerWriteTool(
+    "set_layout_mode",
+    "Set auto-layout mode.",
+    ({ nodeId, ...args }) =>
+      node.sendWithParams("set_layout_mode", [String(nodeId)], args)
+  );
+  registerWriteTool("set_padding", "Set auto-layout padding.", ({ nodeId, ...args }) =>
+    node.sendWithParams("set_padding", [String(nodeId)], args)
+  );
+  registerWriteTool(
+    "set_item_spacing",
+    "Set auto-layout item spacing.",
+    ({ nodeId, ...args }) =>
+      node.sendWithParams("set_item_spacing", [String(nodeId)], args)
+  );
+  registerWriteTool("delete_node", "Delete a node.", ({ nodeId }) =>
+    node.sendWithParams("delete_node", [String(nodeId)])
+  );
 }
 
 export async function executeSaveScreenshots(
