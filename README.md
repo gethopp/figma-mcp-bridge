@@ -88,6 +88,8 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 
 Write tools are intentionally scoped to the current page and a deterministic subset of Figma mutations so AI-driven edits remain easier to validate and safer to automate.
 
+Within `batch_mutation`, temporary references must use the `tmp:` prefix, for example `ref: "tmp:modal"` and `nodeId: "tmp:modal"`. Bare labels like `"modal"` are treated as literal node IDs and are not resolved as batch refs.
+
 ## Local development
 
 #### 1. Clone this repository locally

@@ -76,6 +76,251 @@ function getNumber(value: unknown, field: string): number {
   return value;
 }
 
+/** Reads a positive numeric field from untyped RPC params. */
+function getPositiveNumber(value: unknown, field: string): number {
+  const number = getNumber(value, field);
+  if (number <= 0) {
+    fail("INVALID_INPUT", `${field} must be greater than 0`);
+  }
+  return number;
+}
+
+/** Reads a non-negative numeric field from untyped RPC params. */
+function getNonnegativeNumber(value: unknown, field: string): number {
+  const number = getNumber(value, field);
+  if (number < 0) {
+    fail("INVALID_INPUT", `${field} must be greater than or equal to 0`);
+  }
+  return number;
+}
+
+/** Reads a Figma node id string in colon-separated format. */
+function getFigmaNodeId(value: unknown, field: string): string {
+  const nodeId = getString(value, field);
+  if (!/^\d+:\d+$/.test(nodeId)) {
+    fail("INVALID_INPUT", `${field} must use colon format, e.g. '4029:12345'`);
+  }
+  return nodeId;
+}
+
+/** Reads an optional Figma node id string in colon-separated format. */
+function getOptionalFigmaNodeId(value: unknown, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  return getFigmaNodeId(value, field);
+}
+
+/** Reads an optional non-empty string when present. */
+function getOptionalNonEmptyString(value: unknown, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  return getString(value, field);
+}
+
+/** Validates an enum string field against the allowed literals. */
+function validateEnum(value: unknown, field: string, allowed: readonly string[]): void {
+  const literal = getString(value, field);
+  if (!allowed.includes(literal)) {
+    fail("INVALID_INPUT", `${field} must be one of: ${allowed.join(", ")}`);
+  }
+}
+
+/** Validates the shared text style payload shape. */
+function validateTextStyle(value: unknown): void {
+  if (!isObject(value)) {
+    fail("INVALID_INPUT", "style must be an object");
+  }
+  getOptionalNonEmptyString(value.fontFamily, "style.fontFamily");
+  getOptionalNonEmptyString(value.fontStyle, "style.fontStyle");
+  if (value.fontSize !== undefined) getPositiveNumber(value.fontSize, "style.fontSize");
+  if (value.textDecoration !== undefined) {
+    validateEnum(value.textDecoration, "style.textDecoration", [
+      "NONE",
+      "UNDERLINE",
+      "STRIKETHROUGH",
+    ]);
+  }
+  if (value.textAlignHorizontal !== undefined) {
+    validateEnum(value.textAlignHorizontal, "style.textAlignHorizontal", [
+      "LEFT",
+      "CENTER",
+      "RIGHT",
+      "JUSTIFIED",
+    ]);
+  }
+  if (value.textAlignVertical !== undefined) {
+    validateEnum(value.textAlignVertical, "style.textAlignVertical", ["TOP", "CENTER", "BOTTOM"]);
+  }
+  if (value.textAutoResize !== undefined) {
+    validateEnum(value.textAutoResize, "style.textAutoResize", [
+      "NONE",
+      "WIDTH_AND_HEIGHT",
+      "HEIGHT",
+      "TRUNCATE",
+    ]);
+  }
+  if (value.lineHeight !== undefined) {
+    if (!isObject(value.lineHeight)) {
+      fail("INVALID_INPUT", "style.lineHeight must be an object");
+    }
+    if (value.lineHeight.unit !== undefined) {
+      validateEnum(value.lineHeight.unit, "style.lineHeight.unit", ["PIXELS", "PERCENT"]);
+    }
+    if (value.lineHeight.value !== undefined) {
+      getNonnegativeNumber(value.lineHeight.value, "style.lineHeight.value");
+    }
+  }
+  if (value.letterSpacing !== undefined) {
+    if (!isObject(value.letterSpacing)) {
+      fail("INVALID_INPUT", "style.letterSpacing must be an object");
+    }
+    if (value.letterSpacing.unit !== undefined) {
+      validateEnum(value.letterSpacing.unit, "style.letterSpacing.unit", ["PIXELS", "PERCENT"]);
+    }
+    if (value.letterSpacing.value !== undefined) {
+      getNumber(value.letterSpacing.value, "style.letterSpacing.value");
+    }
+  }
+}
+
+/** Validates the shared padding object shape. */
+function validatePaddingObject(value: unknown, field: string): void {
+  if (!isObject(value)) {
+    fail("INVALID_INPUT", `${field} must be an object`);
+  }
+  if (value.top !== undefined) getNonnegativeNumber(value.top, `${field}.top`);
+  if (value.right !== undefined) getNonnegativeNumber(value.right, `${field}.right`);
+  if (value.bottom !== undefined) getNonnegativeNumber(value.bottom, `${field}.bottom`);
+  if (value.left !== undefined) getNonnegativeNumber(value.left, `${field}.left`);
+}
+
+/** Validates the shared create-node base params shape. */
+function validateCreateNodeBase(params: Record<string, unknown>): void {
+  getOptionalFigmaNodeId(params.parentId, "parentId");
+  getOptionalNonEmptyString(params.name, "name");
+  if (params.x !== undefined) getNumber(params.x, "x");
+  if (params.y !== undefined) getNumber(params.y, "y");
+  if (params.width !== undefined) getPositiveNumber(params.width, "width");
+  if (params.height !== undefined) getPositiveNumber(params.height, "height");
+  getOptionalNonEmptyString(params.key, "key");
+}
+
+/** Validates resolved write params before executeWrite mutates the document. */
+function validateWriteToolParams(
+  type: string,
+  nodeIds: string[] | undefined,
+  params: RequestParams
+): void {
+  const merged: Record<string, unknown> = {
+    ...(params ?? {}),
+    nodeId: nodeIds?.[0] ?? params?.nodeId,
+  };
+
+  switch (type) {
+    case "create_frame":
+      if (params) validateCreateNodeBase(params);
+      if (params?.fills !== undefined) toSolidPaints(params.fills);
+      if (params?.strokes !== undefined) toSolidPaints(params.strokes);
+      if (params?.cornerRadius !== undefined) {
+        getNonnegativeNumber(params.cornerRadius, "cornerRadius");
+      }
+      if (params?.layoutMode !== undefined) {
+        validateEnum(params.layoutMode, "layoutMode", ["NONE", "HORIZONTAL", "VERTICAL"]);
+      }
+      if (params?.itemSpacing !== undefined) getNumber(params.itemSpacing, "itemSpacing");
+      if (params?.padding !== undefined) validatePaddingObject(params.padding, "padding");
+      return;
+    case "create_text":
+      if (params) validateCreateNodeBase(params);
+      if (params?.characters !== undefined && typeof params.characters !== "string") {
+        fail("INVALID_INPUT", "characters must be a string");
+      }
+      if (params?.style !== undefined) validateTextStyle(params.style);
+      if (params?.fills !== undefined) toSolidPaints(params.fills);
+      return;
+    case "create_rectangle":
+      if (params) validateCreateNodeBase(params);
+      if (params?.fills !== undefined) toSolidPaints(params.fills);
+      if (params?.strokes !== undefined) toSolidPaints(params.strokes);
+      if (params?.cornerRadius !== undefined) {
+        getNonnegativeNumber(params.cornerRadius, "cornerRadius");
+      }
+      return;
+    case "append_children":
+      getFigmaNodeId(params?.parentId, "parentId");
+      if (!Array.isArray(params?.childIds) || params.childIds.length === 0) {
+        fail("INVALID_INPUT", "childIds must be a non-empty array");
+      }
+      params.childIds.forEach((childId, index) => getFigmaNodeId(childId, `childIds[${index}]`));
+      return;
+    case "set_position":
+      getFigmaNodeId(merged.nodeId, "nodeId");
+      getNumber(merged.x, "x");
+      getNumber(merged.y, "y");
+      return;
+    case "set_size":
+      getFigmaNodeId(merged.nodeId, "nodeId");
+      getPositiveNumber(merged.width, "width");
+      getPositiveNumber(merged.height, "height");
+      return;
+    case "set_fills":
+      getFigmaNodeId(merged.nodeId, "nodeId");
+      toSolidPaints(merged.fills);
+      return;
+    case "set_strokes":
+      getFigmaNodeId(merged.nodeId, "nodeId");
+      toSolidPaints(merged.strokes);
+      return;
+    case "set_corner_radius":
+      getFigmaNodeId(merged.nodeId, "nodeId");
+      getNonnegativeNumber(merged.cornerRadius, "cornerRadius");
+      return;
+    case "set_text_content":
+      getFigmaNodeId(merged.nodeId, "nodeId");
+      if (typeof merged.characters !== "string") {
+        fail("INVALID_INPUT", "characters must be a string");
+      }
+      return;
+    case "set_text_style":
+      getFigmaNodeId(merged.nodeId, "nodeId");
+      validateTextStyle(merged.style);
+      return;
+    case "set_layout_mode":
+      getFigmaNodeId(merged.nodeId, "nodeId");
+      validateEnum(merged.layoutMode, "layoutMode", ["NONE", "HORIZONTAL", "VERTICAL"]);
+      return;
+    case "set_padding":
+      getFigmaNodeId(merged.nodeId, "nodeId");
+      if (
+        merged.top === undefined &&
+        merged.right === undefined &&
+        merged.bottom === undefined &&
+        merged.left === undefined
+      ) {
+        return;
+      }
+      if (merged.top !== undefined) getNonnegativeNumber(merged.top, "top");
+      if (merged.right !== undefined) getNonnegativeNumber(merged.right, "right");
+      if (merged.bottom !== undefined) getNonnegativeNumber(merged.bottom, "bottom");
+      if (merged.left !== undefined) getNonnegativeNumber(merged.left, "left");
+      return;
+    case "set_item_spacing":
+      getFigmaNodeId(merged.nodeId, "nodeId");
+      getNumber(merged.itemSpacing, "itemSpacing");
+      return;
+    case "find_nodes":
+      getOptionalNonEmptyString(params?.query, "query");
+      getOptionalFigmaNodeId(params?.nodeId, "nodeId");
+      getOptionalNonEmptyString(params?.name, "name");
+      getOptionalNonEmptyString(params?.key, "key");
+      getOptionalFigmaNodeId(params?.parentId, "parentId");
+      return;
+    case "delete_node":
+      getFigmaNodeId(merged.nodeId, "nodeId");
+      return;
+    default:
+      return;
+  }
+}
+
 /** Converts a hex color string into the RGBA values expected by the Figma API. */
 function hexToRGBA(value: string): RGBA {
   const hex = value.replace("#", "");
@@ -448,14 +693,35 @@ async function findNodes(params: RequestParams): Promise<unknown> {
   const nodes: SceneNode[] = [];
   collectNodes(figma.currentPage, nodes);
   let matches = nodes;
-  const nodeId = getOptionalString(params?.nodeId);
-  const name = getOptionalString(params?.name);
-  const key = getOptionalString(params?.key);
-  const parentId = getOptionalString(params?.parentId);
+  const rawQuery = getOptionalString(params?.query);
+  let queryFilters: Record<string, unknown> | undefined;
+  let nameSubstring: string | undefined;
+
+  if (rawQuery) {
+    try {
+      const parsed = JSON.parse(rawQuery);
+      if (isObject(parsed)) {
+        queryFilters = parsed;
+      } else {
+        nameSubstring = rawQuery;
+      }
+    } catch {
+      nameSubstring = rawQuery;
+    }
+  }
+
+  const nodeId = getOptionalString(params?.nodeId) ?? getOptionalString(queryFilters?.nodeId);
+  const name = getOptionalString(params?.name) ?? getOptionalString(queryFilters?.name);
+  const key = getOptionalString(params?.key) ?? getOptionalString(queryFilters?.key);
+  const parentId =
+    getOptionalString(params?.parentId) ?? getOptionalString(queryFilters?.parentId);
   if (nodeId) matches = matches.filter((node) => node.id === nodeId);
   if (name) matches = matches.filter((node) => node.name === name);
   if (key) matches = matches.filter((node) => getPluginKey(node) === key);
   if (parentId) matches = matches.filter((node) => node.parent?.id === parentId);
+  if (nameSubstring) {
+    matches = matches.filter((node) => node.name.includes(nameSubstring));
+  }
   return { matches: matches.map((node) => toMutationResult(node)) };
 }
 
@@ -589,6 +855,11 @@ export async function handleWriteRequest(
       const resolvedNodeId = resolveRef(operation.nodeId, context);
       const resolvedNodeIds = operation.nodeIds?.map((id) => resolveRef(id, context) ?? id);
       const resolvedParams = resolveParams(operation.params, context);
+      validateWriteToolParams(
+        operation.type,
+        resolvedNodeIds ?? (resolvedNodeId ? [resolvedNodeId] : undefined),
+        resolvedParams
+      );
       const result = await executeWrite(
         operation.type,
         resolvedNodeIds ?? (resolvedNodeId ? [resolvedNodeId] : undefined),

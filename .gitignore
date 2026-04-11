@@ -176,6 +176,9 @@ binaries/
 # Server build output
 server/dist/
 
+# Plugin test output
+plugin/dist-test/
+
 # Editor/IDE
 .idea/
 .vscode/

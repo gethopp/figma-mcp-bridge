@@ -55,6 +55,7 @@ function createBaseNode(id, type, name) {
 function createMockFigma() {
   let nextId = 1;
   const registry = new Map();
+  const createNodeId = () => `1:${nextId++}`;
 
   const documentNode = {
     id: "document",
@@ -63,7 +64,7 @@ function createMockFigma() {
     children: [],
   };
 
-  const page = Object.assign(createBaseNode("page-1", "PAGE", "Page 1"), {
+  const page = Object.assign(createBaseNode("1:0", "PAGE", "Page 1"), {
     type: "PAGE",
     children: [],
     appendChild(child) {
@@ -87,12 +88,12 @@ function createMockFigma() {
 
   /** Creates a mock rectangle node. */
   const createRectangle = () =>
-    attach(createBaseNode(`node-${nextId++}`, "RECTANGLE", "Rectangle"));
+    attach(createBaseNode(createNodeId(), "RECTANGLE", "Rectangle"));
 
   /** Creates a mock frame node with child-container behavior. */
   const createFrame = () =>
     attach(
-      Object.assign(createBaseNode(`node-${nextId++}`, "FRAME", "Frame"), {
+      Object.assign(createBaseNode(createNodeId(), "FRAME", "Frame"), {
         type: "FRAME",
         children: [],
         layoutMode: "NONE",
@@ -122,7 +123,7 @@ function createMockFigma() {
   /** Creates a mock text node with the font APIs used by the write engine. */
   const createText = () =>
     attach(
-      Object.assign(createBaseNode(`node-${nextId++}`, "TEXT", "Text"), {
+      Object.assign(createBaseNode(createNodeId(), "TEXT", "Text"), {
         type: "TEXT",
         characters: "",
         fontName: { family: "Inter", style: "Regular" },
@@ -263,11 +264,183 @@ async function testPartialFailure() {
   assert.equal(root.children.length, 80);
 }
 
+/** Verifies batch validation rejects invalid resolved params before executeWrite runs. */
+async function testBatchValidationFailure() {
+  globalThis.figma = createMockFigma();
+
+  const result = await handleWriteRequest("batch_mutation", undefined, {
+    operations: [
+      {
+        type: "create_frame",
+        ref: "tmp:root",
+        params: { name: "Root", width: 100, height: 100 },
+      },
+      {
+        type: "set_size",
+        nodeId: "tmp:root",
+        params: { width: -10, height: 50 },
+      },
+    ],
+  });
+
+  assert.equal(result.executedCount, 1);
+  assert.equal(result.failedStepIndex, 1);
+  assert.equal(result.failure.code, "INVALID_INPUT");
+  assert.match(result.failure.message, /width must be greater than 0/);
+  assert.equal(result.results.length, 1);
+
+  const root = await globalThis.figma.getNodeByIdAsync(result.createdRefs["tmp:root"]);
+  assert.ok(root);
+  assert.equal(root.width, 100);
+  assert.equal(root.height, 100);
+}
+
+/** Verifies find_nodes accepts JSON query filters from the MCP tool contract. */
+async function testFindNodesJsonQuery() {
+  globalThis.figma = createMockFigma();
+
+  const root = await handleWriteRequest("create_frame", undefined, {
+    name: "Cards",
+    key: "cards-root",
+  });
+  await handleWriteRequest("create_rectangle", undefined, {
+    parentId: root.nodeId,
+    name: "Hero Card",
+    key: "hero-card",
+  });
+  await handleWriteRequest("create_text", undefined, {
+    parentId: root.nodeId,
+    name: "Hero Title",
+    characters: "Title",
+  });
+
+  const result = await handleWriteRequest("find_nodes", undefined, {
+    query: JSON.stringify({ parentId: root.nodeId, key: "hero-card" }),
+  });
+
+  assert.equal(result.matches.length, 1);
+  assert.equal(result.matches[0].name, "Hero Card");
+  assert.equal(result.matches[0].parentId, root.nodeId);
+  assert.equal(result.matches[0].key, "hero-card");
+}
+
+/** Verifies non-JSON query strings fall back to name substring matching. */
+async function testFindNodesQuerySubstringFallback() {
+  globalThis.figma = createMockFigma();
+
+  await handleWriteRequest("create_frame", undefined, { name: "Card Shell" });
+  await handleWriteRequest("create_text", undefined, {
+    name: "Card Title",
+    characters: "Title",
+  });
+  await handleWriteRequest("create_rectangle", undefined, { name: "Badge" });
+
+  const result = await handleWriteRequest("find_nodes", undefined, {
+    query: "Card",
+  });
+
+  assert.equal(result.matches.length, 2);
+  assert.deepEqual(
+    result.matches.map((node) => node.name).sort(),
+    ["Card Shell", "Card Title"]
+  );
+}
+
+/** Verifies failed create steps in a batch do not leave behind unreported root-level nodes. */
+async function testBatchCreateFailureDoesNotLeakNodes() {
+  globalThis.figma = createMockFigma();
+
+  const parent = await handleWriteRequest("create_frame", undefined, {
+    name: "Modal Root",
+  });
+
+  const result = await handleWriteRequest("batch_mutation", undefined, {
+    operations: [
+      {
+        type: "create_frame",
+        ref: "tmp:overlay",
+        params: {
+          parentId: parent.nodeId,
+          name: "Overlay",
+          width: 800,
+          height: 600,
+        },
+      },
+      {
+        type: "create_frame",
+        ref: "tmp:modal",
+        params: {
+          parentId: parent.nodeId,
+          name: "Modal",
+          strokes: [{ type: "IMAGE", color: "#D9DEE8" }],
+        },
+      },
+    ],
+  });
+
+  assert.equal(result.executedCount, 1);
+  assert.equal(result.failedStepIndex, 1);
+  assert.equal(result.failure.code, "UNSUPPORTED_PAINT");
+  assert.equal(result.results.length, 1);
+  assert.ok(result.createdRefs["tmp:overlay"]);
+  assert.equal(result.createdRefs["tmp:modal"], undefined);
+
+  const root = await globalThis.figma.getNodeByIdAsync(parent.nodeId);
+  assert.ok(root);
+  assert.deepEqual(
+    root.children.map((node) => node.name),
+    ["Overlay"]
+  );
+
+  const pageChildren = globalThis.figma.currentPage.children.map((node) => node.name);
+  assert.deepEqual(pageChildren, ["Modal Root"]);
+}
+
+/** Verifies mutation tools can target prior batch results through tmp: refs in nodeId. */
+async function testBatchSetStrokesSupportsTmpRef() {
+  globalThis.figma = createMockFigma();
+
+  const result = await handleWriteRequest("batch_mutation", undefined, {
+    operations: [
+      {
+        type: "create_frame",
+        ref: "tmp:modal",
+        params: {
+          name: "Modal",
+          width: 320,
+          height: 180,
+        },
+      },
+      {
+        type: "set_strokes",
+        nodeId: "tmp:modal",
+        params: {
+          strokes: [{ type: "SOLID", color: "#D9DEE8" }],
+        },
+      },
+    ],
+  });
+
+  assert.equal(result.executedCount, 2);
+  assert.equal(result.results.length, 2);
+  assert.ok(result.createdRefs["tmp:modal"]);
+
+  const modal = await globalThis.figma.getNodeByIdAsync(result.createdRefs["tmp:modal"]);
+  assert.ok(modal);
+  assert.equal(modal.strokes.length, 1);
+  assert.equal(modal.strokes[0].type, "SOLID");
+}
+
 /** Runs the write-tool test cases and reports a simple pass/fail summary. */
 async function runTests() {
   const tests = [
     ["testLargeOrderedBatch", testLargeOrderedBatch],
     ["testPartialFailure", testPartialFailure],
+    ["testBatchValidationFailure", testBatchValidationFailure],
+    ["testFindNodesJsonQuery", testFindNodesJsonQuery],
+    ["testFindNodesQuerySubstringFallback", testFindNodesQuerySubstringFallback],
+    ["testBatchCreateFailureDoesNotLeakNodes", testBatchCreateFailureDoesNotLeakNodes],
+    ["testBatchSetStrokesSupportsTmpRef", testBatchSetStrokesSupportsTmpRef],
   ];
   const failures = [];
   let passed = 0;
