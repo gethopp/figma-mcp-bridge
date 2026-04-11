@@ -71,6 +71,7 @@ type WriteToolName = keyof Pick<
   | "delete_node"
 >;
 
+/** Registers all read and write MCP tools exposed by the bridge server. */
 export function registerTools(server: McpServer, node: Node): void {
   server.tool(
     "get_document",
@@ -174,6 +175,7 @@ export function registerTools(server: McpServer, node: Node): void {
     }
   );
 
+  /** Registers a write tool that validates input against the shared schema map. */
   const registerWriteTool = <N extends WriteToolName>(
     name: N,
     description: string,
@@ -393,8 +395,7 @@ function getSingleScreenshotExport(data: unknown): ScreenshotExport {
     throw new Error("Malformed screenshot export payload");
   }
 
-  const screenshot = first as ScreenshotExport;
-  return screenshot;
+  return first as ScreenshotExport;
 }
 
 async function saveScreenshotItemToFile(

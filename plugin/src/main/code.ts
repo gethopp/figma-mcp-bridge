@@ -57,6 +57,7 @@ const READ_REQUEST_TYPES = new Set<RequestType>([
   "get_screenshot",
 ]);
 
+/** Sends lightweight document status to the plugin UI after selection changes. */
 const sendStatus = () => {
   figma.ui.postMessage({
     type: "plugin-status",
@@ -67,6 +68,7 @@ const sendStatus = () => {
   });
 };
 
+/** Converts Figma variable values into JSON-safe transport data. */
 const serializeVariableValue = (value: VariableValue): unknown => {
   if (typeof value === "object" && value !== null) {
     if ("type" in value && value.type === "VARIABLE_ALIAS") {
@@ -87,6 +89,7 @@ const serializeVariableValue = (value: VariableValue): unknown => {
   return value;
 };
 
+/** Routes server requests to read or write handlers and normalizes failures. */
 const handleRequest = async (
   request: ServerRequest
 ): Promise<PluginResponse> => {
@@ -188,7 +191,7 @@ const handleRequest = async (
               children: undefined,
               childCount:
                 (node as ChildrenMixin & SceneNode).children?.filter(
-                  (c) => c.visible !== false
+                  (c) => !!c.visible
                 ).length ?? 0,
             } as ReturnType<typeof serializeNode> & { childCount: number };
           }
@@ -205,7 +208,7 @@ const handleRequest = async (
                     n !== null &&
                     n.type !== "DOCUMENT" &&
                     "visible" in n &&
-                    n.visible !== false
+                    !!n.visible
                 )
                 .map((n) => serializeWithDepth(n, currentDepth + 1))
             );

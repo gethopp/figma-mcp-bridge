@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { handleWriteRequest } from "../dist-test/src/main/write.js";
 
+/** Creates a minimal mock Figma node with the mutable fields used by write tests. */
 function createBaseNode(id, type, name) {
   const pluginData = new Map();
   return {
@@ -50,6 +51,7 @@ function createBaseNode(id, type, name) {
   };
 }
 
+/** Builds a mock `figma` runtime that is sufficient for write-tool tests. */
 function createMockFigma() {
   let nextId = 1;
   const registry = new Map();
@@ -77,14 +79,17 @@ function createMockFigma() {
   documentNode.children.push(page);
   registry.set(page.id, page);
 
+  /** Tracks nodes created during a test so async lookup behaves like the Figma runtime. */
   const attach = (node) => {
     registry.set(node.id, node);
     return node;
   };
 
+  /** Creates a mock rectangle node. */
   const createRectangle = () =>
     attach(createBaseNode(`node-${nextId++}`, "RECTANGLE", "Rectangle"));
 
+  /** Creates a mock frame node with child-container behavior. */
   const createFrame = () =>
     attach(
       Object.assign(createBaseNode(`node-${nextId++}`, "FRAME", "Frame"), {
@@ -114,6 +119,7 @@ function createMockFigma() {
       })
     );
 
+  /** Creates a mock text node with the font APIs used by the write engine. */
   const createText = () =>
     attach(
       Object.assign(createBaseNode(`node-${nextId++}`, "TEXT", "Text"), {
@@ -146,6 +152,7 @@ function createMockFigma() {
   };
 }
 
+/** Verifies ordered batch execution and reference creation across many steps. */
 async function testLargeOrderedBatch() {
   globalThis.figma = createMockFigma();
 
@@ -208,6 +215,7 @@ async function testLargeOrderedBatch() {
   assert.equal(lastRect.cornerRadius, 6);
 }
 
+/** Verifies batch execution stops cleanly and reports partial progress on failure. */
 async function testPartialFailure() {
   globalThis.figma = createMockFigma();
 
@@ -255,6 +263,7 @@ async function testPartialFailure() {
   assert.equal(root.children.length, 80);
 }
 
+/** Runs the write-tool test cases and reports a simple pass/fail summary. */
 async function runTests() {
   const tests = [
     ["testLargeOrderedBatch", testLargeOrderedBatch],

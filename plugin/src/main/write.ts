@@ -33,15 +33,18 @@ type BatchContext = {
   refs: Map<string, string>;
 };
 
+/** Returns true when a value is a plain object suitable for RPC param inspection. */
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** Throws a structured mutation error that can be serialized back to the server. */
 function fail(code: string, message: string, details?: unknown): never {
   throw Object.assign(new Error(message), {
     mutationError: { code, message, details } satisfies MutationError,
   });
 }
 
+/** Normalizes unknown failures into the wire-format mutation error shape. */
 function toMutationError(error: unknown): MutationError {
   if (isObject(error) && "mutationError" in error) {
     return (error as { mutationError: MutationError }).mutationError;
@@ -52,6 +55,7 @@ function toMutationError(error: unknown): MutationError {
   return { code: "INTERNAL_ERROR", message: String(error) };
 }
 
+/** Reads a required string field from untyped RPC params. */
 function getString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) {
     fail("INVALID_INPUT", `${field} must be a non-empty string`);
@@ -59,10 +63,12 @@ function getString(value: unknown, field: string): string {
   return value;
 }
 
+/** Returns a non-empty string when present, otherwise undefined. */
 function getOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/** Reads a required numeric field from untyped RPC params. */
 function getNumber(value: unknown, field: string): number {
   if (typeof value !== "number" || Number.isNaN(value)) {
     fail("INVALID_INPUT", `${field} must be a number`);
@@ -70,6 +76,7 @@ function getNumber(value: unknown, field: string): number {
   return value;
 }
 
+/** Converts a hex color string into the RGBA values expected by the Figma API. */
 function hexToRGBA(value: string): RGBA {
   const hex = value.replace("#", "");
   if (hex.length !== 6 && hex.length !== 8) {
@@ -84,6 +91,7 @@ function hexToRGBA(value: string): RGBA {
   };
 }
 
+/** Validates and converts V1 paint input into solid Figma paints. */
 function toSolidPaints(value: unknown): SolidPaint[] {
   if (!Array.isArray(value)) {
     fail("INVALID_INPUT", "Paint list must be an array");
@@ -103,6 +111,7 @@ function toSolidPaints(value: unknown): SolidPaint[] {
   });
 }
 
+/** Marks nodes created or managed through the write tools with shared plugin data. */
 function setPluginData(node: BaseNode, key?: string): void {
   if (!("setSharedPluginData" in node)) return;
   node.setSharedPluginData(PLUGIN_NS, MANAGED_KEY, "true");
@@ -111,12 +120,14 @@ function setPluginData(node: BaseNode, key?: string): void {
   }
 }
 
+/** Reads the stable plugin-managed key associated with a node, if any. */
 function getPluginKey(node: BaseNode): string | undefined {
   if (!("getSharedPluginData" in node)) return undefined;
   const key = node.getSharedPluginData(PLUGIN_NS, NODE_KEY);
   return key || undefined;
 }
 
+/** Checks whether a node belongs to the active page. */
 function isOnCurrentPage(node: BaseNode): boolean {
   let current: BaseNode | null = node;
   while (current && current.type !== "PAGE" && current.parent) {
@@ -125,6 +136,7 @@ function isOnCurrentPage(node: BaseNode): boolean {
   return current?.type === "PAGE" && current.id === figma.currentPage.id;
 }
 
+/** Ensures an async lookup resolved to a mutable scene node on the current page. */
 function ensureSceneNode(node: BaseNode | null, field: string): SceneNode {
   if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
     fail("NOT_FOUND", `${field} was not found`);
@@ -135,11 +147,13 @@ function ensureSceneNode(node: BaseNode | null, field: string): SceneNode {
   return node as SceneNode;
 }
 
+/** Fetches a scene node by id and validates the current-page mutation boundary. */
 async function getNodeById(nodeId: string, field = "nodeId"): Promise<SceneNode> {
   const node = await figma.getNodeByIdAsync(nodeId);
   return ensureSceneNode(node, field);
 }
 
+/** Resolves the parent container for create operations, defaulting to the current page. */
 async function getParentNode(parentId?: string): Promise<(BaseNode & ChildrenMixin) | PageNode> {
   if (!parentId) return figma.currentPage;
   const node = await getNodeById(parentId, "parentId");
@@ -149,10 +163,12 @@ async function getParentNode(parentId?: string): Promise<(BaseNode & ChildrenMix
   return node;
 }
 
+/** Applies an explicit name or falls back to the default node label. */
 function setName(node: SceneNode, name: unknown, fallback: string): void {
   node.name = getOptionalString(name) ?? fallback;
 }
 
+/** Applies x and y coordinates when both are provided. */
 function applyPosition(node: SceneNode, params: RequestParams): void {
   if (params?.x !== undefined && params?.y !== undefined) {
     node.x = getNumber(params.x, "x");
@@ -160,6 +176,7 @@ function applyPosition(node: SceneNode, params: RequestParams): void {
   }
 }
 
+/** Applies width and height when the node supports resize. */
 function applySize(node: SceneNode, params: RequestParams): void {
   if (params?.width !== undefined && params?.height !== undefined) {
     if (!("resize" in node)) {
@@ -169,6 +186,7 @@ function applySize(node: SceneNode, params: RequestParams): void {
   }
 }
 
+/** Applies solid fill paints to nodes that expose fills. */
 function applyFills(node: SceneNode, fills: unknown): void {
   if (fills === undefined) return;
   if (!("fills" in node)) {
@@ -177,6 +195,7 @@ function applyFills(node: SceneNode, fills: unknown): void {
   node.fills = toSolidPaints(fills);
 }
 
+/** Applies solid stroke paints to nodes that expose strokes. */
 function applyStrokes(node: SceneNode, strokes: unknown): void {
   if (strokes === undefined) return;
   if (!("strokes" in node)) {
@@ -185,6 +204,7 @@ function applyStrokes(node: SceneNode, strokes: unknown): void {
   node.strokes = toSolidPaints(strokes);
 }
 
+/** Applies a uniform corner radius to supported nodes. */
 function applyCornerRadius(node: SceneNode, cornerRadius: unknown): void {
   if (cornerRadius === undefined) return;
   if (!("cornerRadius" in node)) {
@@ -196,6 +216,7 @@ function applyCornerRadius(node: SceneNode, cornerRadius: unknown): void {
   );
 }
 
+/** Applies the requested auto-layout mode to supported container nodes. */
 function applyLayoutMode(node: SceneNode, layoutMode: unknown): void {
   if (layoutMode === undefined) return;
   if (!("layoutMode" in node)) {
@@ -204,6 +225,7 @@ function applyLayoutMode(node: SceneNode, layoutMode: unknown): void {
   node.layoutMode = getString(layoutMode, "layoutMode") as FrameNode["layoutMode"];
 }
 
+/** Applies auto-layout padding values, defaulting omitted edges to zero. */
 function applyPadding(node: SceneNode, padding: unknown): void {
   if (padding === undefined) return;
   if (!("paddingTop" in node) || !isObject(padding)) {
@@ -215,6 +237,7 @@ function applyPadding(node: SceneNode, padding: unknown): void {
   node.paddingLeft = typeof padding.left === "number" ? padding.left : 0;
 }
 
+/** Applies auto-layout item spacing to supported container nodes. */
 function applyItemSpacing(node: SceneNode, itemSpacing: unknown): void {
   if (itemSpacing === undefined) return;
   if (!("itemSpacing" in node)) {
@@ -223,6 +246,7 @@ function applyItemSpacing(node: SceneNode, itemSpacing: unknown): void {
   node.itemSpacing = getNumber(itemSpacing, "itemSpacing");
 }
 
+/** Loads the fonts needed for subsequent text mutations and returns the active font. */
 async function loadFont(node: TextNode, style?: Record<string, unknown>): Promise<FontName> {
   const fontFamily = getOptionalString(style?.fontFamily);
   const fontStyle = getOptionalString(style?.fontStyle);
@@ -257,6 +281,7 @@ async function loadFont(node: TextNode, style?: Record<string, unknown>): Promis
   return font;
 }
 
+/** Applies supported text style fields after ensuring the required fonts are loaded. */
 async function applyTextStyle(node: TextNode, style: unknown): Promise<void> {
   if (style === undefined) return;
   if (!isObject(style)) {
@@ -303,6 +328,7 @@ async function applyTextStyle(node: TextNode, style: unknown): Promise<void> {
   }
 }
 
+/** Replaces text node characters after loading the active font. */
 async function applyTextContent(node: TextNode, characters: unknown): Promise<void> {
   await loadFont(node);
   if (characters !== undefined && characters !== null && typeof characters !== "string") {
@@ -311,6 +337,7 @@ async function applyTextContent(node: TextNode, characters: unknown): Promise<vo
   node.characters = typeof characters === "string" ? characters : "";
 }
 
+/** Builds the normalized mutation payload returned by write operations. */
 function toMutationResult(node: SceneNode): MutationResult {
   return {
     nodeId: node.id,
@@ -322,6 +349,7 @@ function toMutationResult(node: SceneNode): MutationResult {
   };
 }
 
+/** Creates a frame on the current page and applies supported initial properties. */
 async function createFrame(params: RequestParams): Promise<MutationResult> {
   const parent = await getParentNode(getOptionalString(params?.parentId));
   const node = figma.createFrame();
@@ -344,6 +372,7 @@ async function createFrame(params: RequestParams): Promise<MutationResult> {
   }
 }
 
+/** Creates a text node on the current page and applies content and style inputs. */
 async function createText(params: RequestParams): Promise<MutationResult> {
   const parent = await getParentNode(getOptionalString(params?.parentId));
   const node = figma.createText();
@@ -363,6 +392,7 @@ async function createText(params: RequestParams): Promise<MutationResult> {
   }
 }
 
+/** Creates a rectangle on the current page and applies supported visual properties. */
 async function createRectangle(params: RequestParams): Promise<MutationResult> {
   const parent = await getParentNode(getOptionalString(params?.parentId));
   const node = figma.createRectangle();
@@ -382,6 +412,7 @@ async function createRectangle(params: RequestParams): Promise<MutationResult> {
   }
 }
 
+/** Re-parents existing child nodes under the requested container. */
 async function appendChildren(params: RequestParams): Promise<unknown> {
   const parent = await getNodeById(getString(params?.parentId, "parentId"));
   if (!("appendChild" in parent)) {
@@ -402,6 +433,7 @@ async function appendChildren(params: RequestParams): Promise<unknown> {
   };
 }
 
+/** Recursively collects scene nodes below a container for search operations. */
 function collectNodes(root: ChildrenMixin, acc: SceneNode[]): void {
   for (const child of root.children) {
     acc.push(child);
@@ -411,6 +443,7 @@ function collectNodes(root: ChildrenMixin, acc: SceneNode[]): void {
   }
 }
 
+/** Finds current-page nodes by id, name, plugin key, or parent id. */
 async function findNodes(params: RequestParams): Promise<unknown> {
   const nodes: SceneNode[] = [];
   collectNodes(figma.currentPage, nodes);
@@ -426,12 +459,14 @@ async function findNodes(params: RequestParams): Promise<unknown> {
   return { matches: matches.map((node) => toMutationResult(node)) };
 }
 
+/** Deletes a current-page node and reports its id. */
 async function deleteNode(params: RequestParams): Promise<unknown> {
   const node = await getNodeById(getString(params?.nodeId, "nodeId"));
   node.remove();
   return { deleted: node.id };
 }
 
+/** Loads a node, runs a mutator, and returns the normalized mutation result. */
 async function mutateNode(
   params: RequestParams,
   mutator: (node: SceneNode) => Promise<void> | void
@@ -441,6 +476,7 @@ async function mutateNode(
   return toMutationResult(node);
 }
 
+/** Dispatches a single write tool invocation to its concrete implementation. */
 async function executeWrite(type: string, nodeIds: string[] | undefined, params: RequestParams): Promise<unknown> {
   const merged: Record<string, unknown> = {
     ...(params ?? {}),
@@ -496,6 +532,7 @@ async function executeWrite(type: string, nodeIds: string[] | undefined, params:
   }
 }
 
+/** Resolves temporary batch references like `tmp:card` into concrete node ids. */
 function resolveRef(value: string | undefined, context: BatchContext): string | undefined {
   if (!value || !value.startsWith("tmp:")) return value;
   const resolved = context.refs.get(value);
@@ -505,6 +542,7 @@ function resolveRef(value: string | undefined, context: BatchContext): string | 
   return resolved;
 }
 
+/** Resolves temporary references inside an operation's params object. */
 function resolveParams(
   params: Record<string, unknown> | undefined,
   context: BatchContext
@@ -528,6 +566,7 @@ function resolveParams(
   );
 }
 
+/** Handles both single write requests and ordered batch mutations from the server. */
 export async function handleWriteRequest(
   type: string,
   nodeIds: string[] | undefined,
@@ -578,6 +617,7 @@ export async function handleWriteRequest(
   };
 }
 
+/** Serializes plugin-side write failures into the transport error shape. */
 export function serializeWriteError(error: unknown): MutationError {
   return toMutationError(error);
 }
