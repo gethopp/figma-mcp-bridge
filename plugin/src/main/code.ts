@@ -46,6 +46,18 @@ type PluginResponse = {
   error?: string;
 };
 
+const getFileKey = (): string => {
+  // figma.fileKey is available for saved files; fall back to root name
+  try {
+    if (typeof figma.fileKey === "string" && figma.fileKey) {
+      return figma.fileKey;
+    }
+  } catch {
+    // fileKey may not be available in all contexts
+  }
+  return figma.root.name;
+};
+
 const READ_REQUEST_TYPES = new Set<RequestType>([
   "get_document",
   "get_selection",
@@ -63,6 +75,7 @@ const sendStatus = () => {
     type: "plugin-status",
     payload: {
       fileName: figma.root.name,
+      fileKey: getFileKey(),
       selectionCount: figma.currentPage.selection.length,
     },
   });

@@ -31,15 +31,17 @@ type PluginResponse = {
 
 type PluginStatus = {
   fileName: string;
+  fileKey: string;
   selectionCount: number;
 };
 
-const WS_URL = "ws://localhost:1994/ws";
+const WS_BASE_URL = "ws://localhost:1994/ws";
 
 export default function App() {
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<PluginStatus>({
     fileName: "Unknown file",
+    fileKey: "",
     selectionCount: 0
   });
   const socketRef = useRef<WebSocket | null>(null);
@@ -76,13 +78,17 @@ export default function App() {
     };
   }, []);
 
+  // Connect/reconnect WebSocket when fileKey changes
   useEffect(() => {
+    if (!status.fileKey) return;
+
     const connect = () => {
       if (socketRef.current) {
         socketRef.current.close();
       }
 
-      const ws = new WebSocket(WS_URL);
+      const wsUrl = `${WS_BASE_URL}?fileKey=${encodeURIComponent(status.fileKey)}&fileName=${encodeURIComponent(status.fileName)}`;
+      const ws = new WebSocket(wsUrl);
       socketRef.current = ws;
 
       ws.onopen = () => {
@@ -115,12 +121,14 @@ export default function App() {
     return () => {
       if (reconnectTimer.current !== null) {
         window.clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
       }
       if (socketRef.current) {
         socketRef.current.close();
+        socketRef.current = null;
       }
     };
-  }, []);
+  }, [status.fileKey, status.fileName]);
 
 
 

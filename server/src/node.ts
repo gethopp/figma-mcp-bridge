@@ -1,7 +1,7 @@
 import { Leader } from "./leader.js";
 import { Follower } from "./follower.js";
 import { Role } from "./types.js";
-import type { BridgeResponse } from "./types.js";
+import type { BridgeResponse, ConnectedFile } from "./types.js";
 
 /**
  * Node is the dynamic handler that switches between leader and follower roles.
@@ -33,22 +33,32 @@ export class Node {
 
   send(
     requestType: string,
-    nodeIds?: string[]
+    nodeIds?: string[],
+    fileKey?: string
   ): Promise<BridgeResponse> {
-    return this.sendWithParams(requestType, nodeIds);
+    return this.sendWithParams(requestType, nodeIds, undefined, fileKey);
   }
 
   sendWithParams(
     requestType: string,
     nodeIds?: string[],
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
+    fileKey?: string
   ): Promise<BridgeResponse> {
     if (this._role === Role.Leader && this.leader) {
       return this.leader
         .getBridge()
-        .sendWithParams(requestType, nodeIds, params);
+        .sendWithParams(requestType, nodeIds, params, fileKey);
     }
-    return this.follower.sendWithParams(requestType, nodeIds, params);
+    return this.follower.sendWithParams(requestType, nodeIds, params, fileKey);
+  }
+
+  listConnectedFiles(): ConnectedFile[] | undefined {
+    if (this._role === Role.Leader && this.leader) {
+      return this.leader.getBridge().listConnectedFiles();
+    }
+    // Followers return undefined — the tool handler falls back to RPC
+    return undefined;
   }
 
   async becomeLeader(): Promise<void> {

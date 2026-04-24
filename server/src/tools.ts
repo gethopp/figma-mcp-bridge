@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { Node } from "./node.js";
 import { toolInputSchemas } from "./schema.js";
 import type { BridgeResponse } from "./types.js";
+import { Follower } from "./follower.js";
 
 type ToolResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -72,92 +73,143 @@ type WriteToolName = keyof Pick<
 >;
 
 /** Registers all read and write MCP tools exposed by the bridge server. */
-export function registerTools(server: McpServer, node: Node): void {
+export function registerTools(server: McpServer, node: Node, port: number): void {
+  server.tool(
+    "list_files",
+    "List all currently connected Figma files. Returns fileKey and fileName for each. Use the fileKey to target a specific file in other tools.",
+    async (): Promise<ToolResult> => {
+      try {
+        let files = node.listConnectedFiles();
+        if (files === undefined) {
+          // Follower: fetch via RPC from leader
+          const follower = new Follower(`http://localhost:${port}`);
+          files = await follower.listConnectedFiles();
+        }
+        return {
+          content: [{ type: "text", text: JSON.stringify(files) }],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: err instanceof Error ? err.message : String(err),
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
   server.tool(
     "get_document",
-    "Get the current Figma page document tree",
-    async (): Promise<ToolResult> => {
-      return renderResponse(() => node.send("get_document"));
+    "Get the current Figma page document tree. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_document.shape,
+    async ({ fileKey }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.send("get_document", undefined, fileKey)
+      );
     }
   );
 
   server.tool(
     "get_selection",
-    "Get the currently selected nodes in Figma",
-    async (): Promise<ToolResult> => {
-      return renderResponse(() => node.send("get_selection"));
+    "Get the currently selected nodes in Figma. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_selection.shape,
+    async ({ fileKey }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.send("get_selection", undefined, fileKey)
+      );
     }
   );
 
   server.tool(
     "get_node",
-    "Get a specific Figma node by ID. Must use colon format, e.g. '4029:12345', never use hyphens.",
+    "Get a specific Figma node by ID. Must use colon format, e.g. '4029:12345', never use hyphens. When multiple files are connected, specify fileKey.",
     toolInputSchemas.get_node.shape,
-    async ({ nodeId }): Promise<ToolResult> => {
-      return renderResponse(() => node.send("get_node", [nodeId]));
+    async ({ nodeId, fileKey }): Promise<ToolResult> => {
+      return renderResponse(() => node.send("get_node", [nodeId], fileKey));
     }
   );
 
   server.tool(
     "get_styles",
-    "Get all local styles in the document",
-    async (): Promise<ToolResult> => {
-      return renderResponse(() => node.send("get_styles"));
+    "Get all local styles in the document. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_styles.shape,
+    async ({ fileKey }): Promise<ToolResult> => {
+      return renderResponse(() => node.send("get_styles", undefined, fileKey));
     }
   );
 
   server.tool(
     "get_metadata",
-    "Get metadata about the current Figma document including file name, pages, and current page info",
-    async (): Promise<ToolResult> => {
-      return renderResponse(() => node.send("get_metadata"));
+    "Get metadata about the current Figma document including file name, pages, and current page info. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_metadata.shape,
+    async ({ fileKey }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.send("get_metadata", undefined, fileKey)
+      );
     }
   );
 
   server.tool(
     "get_design_context",
-    "Get the design context for the current selection or page. Returns a summarized tree structure optimized for understanding the current design context.",
+    "Get the design context for the current selection or page. Returns a summarized tree structure optimized for understanding the current design context. When multiple files are connected, specify fileKey.",
     toolInputSchemas.get_design_context.shape,
-    async ({ depth }): Promise<ToolResult> => {
+    async ({ depth, fileKey }): Promise<ToolResult> => {
       const params: Record<string, unknown> = {};
       if (depth !== undefined && depth > 0) {
         params.depth = depth;
       }
       return renderResponse(() =>
-        node.sendWithParams("get_design_context", undefined, params)
+        node.sendWithParams("get_design_context", undefined, params, fileKey)
       );
     }
   );
 
   server.tool(
     "get_variable_defs",
-    "Get all local variable definitions including variable collections, modes, and variable values. Variables are Figma's system for design tokens (colors, numbers, strings, booleans).",
-    async (): Promise<ToolResult> => {
-      return renderResponse(() => node.send("get_variable_defs"));
+    "Get all local variable definitions including variable collections, modes, and variable values. Variables are Figma's system for design tokens (colors, numbers, strings, booleans). When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_variable_defs.shape,
+    async ({ fileKey }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.send("get_variable_defs", undefined, fileKey)
+      );
     }
   );
 
   server.tool(
     "get_screenshot",
-    "Export a screenshot of the selected nodes or specific nodes by ID. Returns base64-encoded image data.",
+    "Export a screenshot of the selected nodes or specific nodes by ID. Returns base64-encoded image data. When multiple files are connected, specify fileKey.",
     toolInputSchemas.get_screenshot.shape,
-    async ({ nodeIds, format, scale }): Promise<ToolResult> => {
+    async ({ nodeIds, format, scale, fileKey }): Promise<ToolResult> => {
       const params: Record<string, unknown> = {};
       if (format) params.format = format;
       if (scale !== undefined && scale > 0) params.scale = scale;
       return renderResponse(() =>
-        node.sendWithParams("get_screenshot", nodeIds, params)
+        node.sendWithParams("get_screenshot", nodeIds, params, fileKey)
       );
     }
   );
 
   server.tool(
     "save_screenshots",
-    "Export screenshots for multiple nodes and save them directly to the local filesystem. Returns metadata only (no base64).",
+    "Export screenshots for multiple nodes and save them directly to the local filesystem. Returns metadata only (no base64). When multiple files are connected, specify fileKey.",
     toolInputSchemas.save_screenshots.shape,
-    async ({ items, format, scale }): Promise<ToolResult> => {
+    async ({ items, format, scale, fileKey }): Promise<ToolResult> => {
       try {
-        const result = await executeSaveScreenshots(node, items, format, scale);
+        // Create a sender bound to the specific fileKey
+        const sender: ScreenshotSender = {
+          sendWithParams: (requestType, nodeIds, params) =>
+            node.sendWithParams(requestType, nodeIds, params, fileKey),
+        };
+        const result = await executeSaveScreenshots(
+          sender,
+          items,
+          format,
+          scale
+        );
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };

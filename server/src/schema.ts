@@ -91,9 +91,33 @@ const batchOperation = z.object({
   ref: z.string().min(1).optional(),
 });
 
+const fileKeyField = z
+  .string()
+  .optional()
+  .describe(
+    "The fileKey of the Figma file to query. Required when multiple files are connected. Use list_files to see connected files."
+  );
+
 export const toolInputSchemas = {
+  get_document: z.object({
+    fileKey: fileKeyField,
+  }),
+
+  get_selection: z.object({
+    fileKey: fileKeyField,
+  }),
+
   get_node: z.object({
     nodeId: figmaNodeId.describe("The node ID to fetch"),
+    fileKey: fileKeyField,
+  }),
+
+  get_styles: z.object({
+    fileKey: fileKeyField,
+  }),
+
+  get_metadata: z.object({
+    fileKey: fileKeyField,
   }),
 
   get_design_context: z.object({
@@ -101,6 +125,11 @@ export const toolInputSchemas = {
       .number()
       .optional()
       .describe("How many levels deep to traverse the node tree (default 2)"),
+    fileKey: fileKeyField,
+  }),
+
+  get_variable_defs: z.object({
+    fileKey: fileKeyField,
   }),
 
   get_screenshot: z.object({
@@ -117,6 +146,7 @@ export const toolInputSchemas = {
       .number()
       .optional()
       .describe("Export scale for raster formats (default 2)"),
+    fileKey: fileKeyField,
   }),
 
   save_screenshots: z.object({
@@ -130,13 +160,25 @@ export const toolInputSchemas = {
             .describe(
               "Output file path (relative paths resolve from the MCP server current working directory)",
             ),
-          format: exportFormat.optional(),
-          scale: z.number().optional(),
-        })
+          format: exportFormat
+            .optional()
+            .describe("Per-item export format override: PNG, SVG, JPG, or PDF"),
+          scale: z
+            .number()
+            .optional()
+            .describe("Per-item export scale override for raster formats"),
+        }),
       )
-      .min(1),
-    format: exportFormat.optional(),
-    scale: z.number().optional(),
+      .min(1)
+      .describe("List of screenshot save operations to execute in batch"),
+    format: exportFormat
+      .optional()
+      .describe("Default export format: PNG (default) or SVG or JPG or PDF"),
+    scale: z
+      .number()
+      .optional()
+      .describe("Default export scale for raster formats (default 2)"),
+    fileKey: fileKeyField,
   }),
   create_frame: createNodeBase.extend({
     fills: z.array(solidPaint).optional(),
@@ -230,8 +272,13 @@ const rpcToArgs: Record<
   ToolName,
   (nodeIds?: string[], params?: Record<string, unknown>) => unknown
 > = {
-  get_node: (nodeIds) => ({ nodeId: nodeIds?.[0] }),
+  get_document: (_nodeIds, params) => ({ ...params }),
+  get_selection: (_nodeIds, params) => ({ ...params }),
+  get_node: (nodeIds, params) => ({ nodeId: nodeIds?.[0], ...params }),
+  get_styles: (_nodeIds, params) => ({ ...params }),
+  get_metadata: (_nodeIds, params) => ({ ...params }),
   get_design_context: (_nodeIds, params) => ({ ...params }),
+  get_variable_defs: (_nodeIds, params) => ({ ...params }),
   get_screenshot: (nodeIds, params) => ({ nodeIds, ...params }),
   save_screenshots: (_nodeIds, params) => ({ ...params }),
   create_frame: (_nodeIds, params) => ({ ...params }),

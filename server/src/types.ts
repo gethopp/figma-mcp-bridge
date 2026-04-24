@@ -16,11 +16,17 @@ export interface RPCRequest {
   tool: string;
   nodeIds?: string[];
   params?: Record<string, unknown>;
+  fileKey?: string;
 }
 
 export interface RPCResponse {
   data?: unknown;
   error?: string;
+}
+
+export interface ConnectedFile {
+  fileKey: string;
+  fileName: string;
 }
 
 export enum Role {

@@ -21,6 +21,8 @@ The limit for free accounts is 6 requests per month, yes **per month**.
 
 Figma MCP Bridge is a solution to this problem. It is a plugin + MCP server that streams live Figma document data to AI tools without hitting Figma API rate limits, so its Figma MCP for the rest of us ✊
 
+It supports **multiple Figma files connected simultaneously**; open the plugin in each file and your AI agent can query any of them by `fileKey`. Single-file setups work exactly as before with no changes required.
+
 ## Demo
 
 [Watch a demo of building a UI in Cursor with Figma MCP Bridge](https://youtu.be/ouygIhFBx0g)
@@ -53,12 +55,15 @@ Download the plugin from the [latest release](https://github.com/gethopp/figma-m
 
 Open a Figma file, run the plugin, and start prompting your AI tool. The MCP server will automatically connect to the plugin.
 
+To work across multiple files, just open the plugin in each Figma file. The bridge keeps all connections active and your AI agent can target any of them by `fileKey`.
+
 If you want to know more about how it works, read the [How it works](#how-it-works) section.
 
 ## Available Tools
 
 | Tool | Description |
 |------|-------------|
+| `list_files` | List all connected Figma files (supports multi-file workflows) |
 | `get_document` | Get the current Figma page document tree |
 | `get_selection` | Get the currently selected nodes in Figma |
 | `get_node` | Get a specific Figma node by ID (colon format, e.g. `4029:12345`) |
@@ -89,6 +94,8 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 Write tools are intentionally scoped to the current page and a deterministic subset of Figma mutations so AI-driven edits remain easier to validate and safer to automate.
 
 Within `batch_mutation`, temporary references must use the `tmp:` prefix, for example `ref: "tmp:modal"` and `nodeId: "tmp:modal"`. Bare labels like `"modal"` are treated as literal node IDs and are not resolved as batch refs.
+
+All tools accept an optional `fileKey` parameter when multiple Figma files are connected. Use `list_files` to discover connected files and their keys.
 
 ## Local development
 
@@ -157,10 +164,10 @@ The Figma plugin is the user interface for the Figma MCP Bridge. You run this in
 
 ### 2. The MCP Server
 
-The MCP server is the core of the Figma MCP Bridge. As the Figma plugin connects with the MCP server via a WebSocket connection, the MCP server is responsible for:
-- Handling WebSocket connections from the Figma plugin
-- Forwarding tool calls to the Figma plugin
-- Routing responses back to the Figma plugin
+The MCP server is the core of the Figma MCP Bridge. It maintains a registry of WebSocket connections keyed by `fileKey`, so multiple Figma files can be connected simultaneously. The server is responsible for:
+- Handling WebSocket connections from one or more Figma plugin instances
+- Routing tool calls to the correct file based on `fileKey`
+- Forwarding responses back to the AI client
 - Handling leader election (as we can have only one WS connection to an MCP server at a time)
 
 

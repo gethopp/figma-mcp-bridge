@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     version: VERSION,
   });
 
-  registerTools(server, node);
+  registerTools(server, node, PORT);
 
   console.error(`Starting MCP server (role: ${node.roleName})`);
 
