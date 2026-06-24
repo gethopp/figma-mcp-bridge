@@ -14,6 +14,7 @@ interface ConnectionEntry {
   ws: WebSocket;
   fileKey: string;
   fileName: string;
+  isAlive: boolean;
 }
 
 export class Bridge {
@@ -21,9 +22,25 @@ export class Bridge {
   private connections = new Map<string, ConnectionEntry>();
   private pending = new Map<string, PendingRequest>();
   private counter = 0;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.wss = new WebSocketServer({ noServer: true });
+
+    this.pingTimer = setInterval(() => {
+      for (const [fileKey, entry] of this.connections) {
+        if (!entry.isAlive) {
+          entry.ws.terminate();
+          this.connections.delete(fileKey);
+          console.error(
+            `Plugin dead (no pong): ${entry.fileName} (${fileKey})`
+          );
+          continue;
+        }
+        entry.isAlive = false;
+        entry.ws.ping();
+      }
+    }, 30_000);
   }
 
   handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
@@ -59,8 +76,18 @@ export class Bridge {
     if (existing) {
       existing.ws.close();
     }
-    this.connections.set(fileKey, { ws, fileKey, fileName });
+    this.connections.set(fileKey, {
+      ws,
+      fileKey,
+      fileName,
+      isAlive: true,
+    });
     console.error(`Plugin connected: ${fileName} (${fileKey})`);
+
+    ws.on("pong", () => {
+      const entry = this.connections.get(fileKey);
+      if (entry) entry.isAlive = true;
+    });
 
     ws.on("message", (data) => {
       try {
@@ -222,6 +249,11 @@ export class Bridge {
   }
 
   close(): void {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+
     // Reject all pending requests
     for (const [id, { reject, timeout }] of this.pending) {
       clearTimeout(timeout);
