@@ -86,7 +86,7 @@ export class Bridge {
 
     ws.on("pong", () => {
       const entry = this.connections.get(fileKey);
-      if (entry) entry.isAlive = true;
+      if (entry && entry.ws === ws) entry.isAlive = true;
     });
 
     ws.on("message", (data) => {
