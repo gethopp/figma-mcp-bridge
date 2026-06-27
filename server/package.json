@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test test/create-image-rpc.test.mjs",
     "prepublishOnly": "bun run build"
   },
   "keywords": [

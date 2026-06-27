@@ -32,11 +32,13 @@ export class Follower {
       signal: AbortSignal.timeout(35_000),
     });
 
-    if (!response.ok) {
-      throw new Error(`Leader returned status ${response.status}`);
-    }
-
     const rpcResp = (await response.json()) as RPCResponse;
+
+    if (!response.ok) {
+      throw new Error(
+        rpcResp.error ?? `Leader returned status ${response.status}`
+      );
+    }
 
     if (rpcResp.error) {
       throw new Error(rpcResp.error);
@@ -57,11 +59,13 @@ export class Follower {
       signal: AbortSignal.timeout(5_000),
     });
 
-    if (!response.ok) {
-      throw new Error(`Leader returned status ${response.status}`);
-    }
-
     const rpcResp = (await response.json()) as RPCResponse;
+
+    if (!response.ok) {
+      throw new Error(
+        rpcResp.error ?? `Leader returned status ${response.status}`
+      );
+    }
     if (rpcResp.error) {
       throw new Error(rpcResp.error);
     }
