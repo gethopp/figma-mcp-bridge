@@ -778,6 +778,48 @@ export const toolInputSchemas = {
       ),
     fileKey: fileKeyField,
   }),
+
+  get_motion_styles: z.object({
+    fileKey: fileKeyField,
+  }),
+
+  get_node_motion: z.object({
+    nodeId: createFigmaNodeIdSchema().describe("The node ID to fetch motion properties for"),
+    fileKey: fileKeyField,
+  }),
+
+  apply_animation_style: z.object({
+    nodeId: createFigmaNodeIdSchema().describe("The node ID to apply the style to"),
+    styleId: z.string().describe("The ID of the animation style to apply"),
+    animationStyleData: z.record(z.unknown()).optional().describe("Optional values used to configure the applied animation style (e.g. duration, timelineOffset, axis, direction)"),
+    fileKey: fileKeyField,
+  }),
+
+  remove_animation_style: z.object({
+    nodeId: createFigmaNodeIdSchema().describe("The node ID to remove the style from"),
+    animationStyleId: z.string().optional().describe("The ID of the animation style to remove. If omitted, all animation styles are removed."),
+    fileKey: fileKeyField,
+  }),
+
+  apply_manual_keyframe_track: z.object({
+    nodeId: createFigmaNodeIdSchema().describe("The node ID to apply the track to"),
+    field: z.record(z.unknown()).describe("The property, paint, or effect field to animate. Example: { type: 'PROPERTY', name: 'TRANSLATION_X' }"),
+    track: z.record(z.unknown()).describe("The manual keyframe track to write. Contains keyframes, baseValue, etc."),
+    fileKey: fileKeyField,
+  }),
+
+  remove_manual_keyframe_track: z.object({
+    nodeId: createFigmaNodeIdSchema().describe("The node ID to remove the track from"),
+    field: z.record(z.unknown()).describe("The property, paint, or effect field to remove. Example: { type: 'PROPERTY', name: 'TRANSLATION_X' }"),
+    fileKey: fileKeyField,
+  }),
+
+  set_timeline_duration: z.object({
+    nodeId: createFigmaNodeIdSchema().describe("The node ID whose timeline duration will be changed"),
+    timelineId: z.string().describe("A timeline id read from the node's timelines array"),
+    duration: z.number().describe("The new timeline duration in seconds (must be greater than zero)"),
+    fileKey: fileKeyField,
+  }),
 } as const;
 
 type ToolName = keyof typeof toolInputSchemas;
@@ -829,6 +871,13 @@ const rpcToArgs: Record<
   scroll_and_zoom_into_view: (nodeIds, params) => ({ nodeIds, ...params }),
   delete_nodes: (nodeIds, params) => ({ nodeIds, ...params }),
   save_screenshots: (_nodeIds, params) => ({ ...params }),
+  get_motion_styles: (_nodeIds, params) => ({ ...params }),
+  get_node_motion: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  apply_animation_style: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  remove_animation_style: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  apply_manual_keyframe_track: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  remove_manual_keyframe_track: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  set_timeline_duration: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
 };
 
 /**

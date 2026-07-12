@@ -29,7 +29,7 @@ export class Follower {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(rpcReq),
-      signal: AbortSignal.timeout(35_000),
+      signal: AbortSignal.timeout(210_000),
     });
 
     if (!response.ok) {

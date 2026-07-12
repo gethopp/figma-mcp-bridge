@@ -26,6 +26,9 @@ export class Bridge {
 
   constructor() {
     this.wss = new WebSocketServer({ noServer: true });
+    this.wss.on("error", (err) => {
+      console.error("WebSocketServer error:", err);
+    });
 
     this.pingTimer = setInterval(() => {
       for (const [fileKey, entry] of this.connections) {
@@ -224,8 +227,8 @@ export class Bridge {
 
       const timeout = setTimeout(() => {
         this.pending.delete(requestId);
-        reject(new Error("Request timed out"));
-      }, 30_000);
+        reject(new Error("Request timed out (3 minutes)"));
+      }, 180_000);
 
       this.pending.set(requestId, { resolve, reject, timeout, ws: conn });
 

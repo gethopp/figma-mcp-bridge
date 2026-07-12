@@ -75,6 +75,13 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `get_variable_defs` | Get all variable collections, modes, and values (design tokens) |
 | `get_screenshot` | Export nodes as PNG/SVG/JPG/PDF (base64-encoded) |
 | `save_screenshots` | Export and save screenshots directly to the local filesystem |
+| `get_motion_styles` | List all available animation presets (beta) |
+| `get_node_motion` | Read a node's current animation styles and properties (beta) |
+| `apply_animation_style` | Apply a preset animation style to a node (beta) |
+| `remove_animation_style` | Remove an applied animation style from a node (beta) |
+| `apply_manual_keyframe_track` | Apply a manual keyframe track to a node property (beta) |
+| `remove_manual_keyframe_track` | Remove a manual keyframe track from a node property (beta) |
+| `set_timeline_duration` | Set the duration of a timeline in seconds (beta) |
 | `set_node_visibility` | Show or hide specific nodes |
 | `set_text_content` | Replace the contents of a text node |
 | `set_text_properties` | Patch font, size, alignment, auto-resize, color, and bounds on a text node |

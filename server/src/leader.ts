@@ -57,12 +57,13 @@ export class Leader {
       );
 
       // Fail fast if port is already in use
-      server.once("error", (err: NodeJS.ErrnoException) => {
-        reject(
-          err.code === "EADDRINUSE"
-            ? new Error(`Port ${this.port} already in use`)
-            : err
-        );
+      server.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE") {
+          reject(new Error(`Port ${this.port} already in use`));
+        } else {
+          console.error("Leader HTTP server error:", err);
+          if (!this.server) reject(err); // reject if during startup
+        }
       });
 
       server.listen(this.port, () => {

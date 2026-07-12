@@ -499,6 +499,123 @@ export function registerTools(
   );
 
   server.tool(
+    "get_motion_styles",
+    "List all available animation presets in Figma (Motion API beta). When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_motion_styles.shape,
+    async ({ fileKey }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.send("get_motion_styles", undefined, fileKey)
+      );
+    }
+  );
+
+  server.tool(
+    "get_node_motion",
+    "Read a node's current animationStyles, animations, manualKeyframeTracks, and timelines (Motion API beta). When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_node_motion.shape,
+    async ({ nodeId, fileKey }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.send("get_node_motion", [nodeId], fileKey)
+      );
+    }
+  );
+
+  server.tool(
+    "apply_animation_style",
+    "Apply a preset animation style to a node (Motion API beta). When multiple files are connected, specify fileKey.",
+    toolInputSchemas.apply_animation_style.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(toolInputSchemas.apply_animation_style, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeId, fileKey, ...properties } = parsed.data;
+      return renderResponse(() =>
+        node.sendWithParams(
+          "apply_animation_style",
+          [nodeId],
+          properties,
+          fileKey
+        )
+      );
+    }
+  );
+
+  server.tool(
+    "remove_animation_style",
+    "Remove an applied animation style from a node (Motion API beta). If no animationStyleId is provided, removes all styles. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.remove_animation_style.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(toolInputSchemas.remove_animation_style, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeId, fileKey, ...properties } = parsed.data;
+      return renderResponse(() =>
+        node.sendWithParams(
+          "remove_animation_style",
+          [nodeId],
+          properties,
+          fileKey
+        )
+      );
+    }
+  );
+
+  server.tool(
+    "apply_manual_keyframe_track",
+    "Applies or replaces the manual Motion keyframe track for a property, paint, or effect field on a node. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.apply_manual_keyframe_track.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(toolInputSchemas.apply_manual_keyframe_track, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeId, fileKey, ...properties } = parsed.data;
+      return renderResponse(() =>
+        node.sendWithParams(
+          "apply_manual_keyframe_track",
+          [nodeId],
+          properties,
+          fileKey
+        )
+      );
+    }
+  );
+
+  server.tool(
+    "remove_manual_keyframe_track",
+    "Removes the manual Motion keyframe track for a property, paint, or effect field on a node. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.remove_manual_keyframe_track.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(toolInputSchemas.remove_manual_keyframe_track, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeId, fileKey, ...properties } = parsed.data;
+      return renderResponse(() =>
+        node.sendWithParams(
+          "remove_manual_keyframe_track",
+          [nodeId],
+          properties,
+          fileKey
+        )
+      );
+    }
+  );
+
+  server.tool(
+    "set_timeline_duration",
+    "Sets the duration (in seconds) for a timeline. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.set_timeline_duration.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(toolInputSchemas.set_timeline_duration, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeId, fileKey, ...properties } = parsed.data;
+      return renderResponse(() =>
+        node.sendWithParams(
+          "set_timeline_duration",
+          [nodeId],
+          properties,
+          fileKey
+        )
+      );
+    }
+  );
+
+  server.tool(
     "save_screenshots",
     "Export screenshots for multiple nodes and save them directly to the local filesystem. Returns metadata only (no base64). When multiple files are connected, specify fileKey.",
     toolInputSchemas.save_screenshots.shape,
