@@ -8,7 +8,7 @@
         "react-dom": "^18.3.1",
       },
       "devDependencies": {
-        "@figma/plugin-typings": "1.123.0",
+        "@figma/plugin-typings": "^1.130.0",
         "@types/react": "^18.3.4",
         "@types/react-dom": "^18.3.0",
         "@vitejs/plugin-react": "^4.3.2",
@@ -104,7 +104,7 @@
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.21.5", "", { "os": "win32", "cpu": "x64" }, "sha512-tQd/1efJuzPC6rCFwEvLtci/xNFcTZknmXs98FYDfGE4wP9ClFV98nyKrzJKVPMhdDnjzLhdUyMX4PsQAPjwIw=="],
 
-    "@figma/plugin-typings": ["@figma/plugin-typings@1.123.0", "", {}, "sha512-NLv2aQ8R9dP5psDplWpq+pJxRUGsJ1YEYYbBV2oTd03kS+aau7N9XWLjw52s1uVgi8jQ33N001EX3f7vSCztjQ=="],
+    "@figma/plugin-typings": ["@figma/plugin-typings@1.130.0", "", {}, "sha512-kz+eU4TXBr99YrMyF2/WtcsdS6K4Ksy3datZZtuCUUSDPRknJAVLZpjhBESCd0tCtHRWKeo4l/I7Aze6lHB52A=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
