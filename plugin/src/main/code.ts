@@ -157,6 +157,9 @@ const getTextNodeById = async (nodeId: string): Promise<TextNode> => {
 const supportsChildren = (node: BaseNode): node is BaseNode & ChildrenMixin =>
   "appendChild" in node;
 
+const isMotionNode = (node: SceneNode): node is SceneNode & MotionNodeMixin =>
+  "applyAnimationStyle" in node;
+
 const getParentNodeById = async (
   parentId: string
 ): Promise<BaseNode & ChildrenMixin> => {
@@ -1670,7 +1673,7 @@ const handleRequest = async (
         };
       }
       case "get_motion_styles": {
-        const motion = (figma as any).motion;
+        const motion = figma.motion;
         if (!motion || typeof motion.figmaAnimationStyles !== "function") {
           throw new Error("figma.motion.figmaAnimationStyles is not available in this Figma version");
         }
@@ -1685,9 +1688,9 @@ const handleRequest = async (
       case "get_node_motion": {
         const nodeId = request.nodeIds && request.nodeIds[0];
         if (!nodeId) throw new Error("nodeIds is required for get_node_motion");
-        const node = await getSceneNodeById(nodeId) as any;
-        if (!("animations" in node)) {
-          throw new Error(`Node does not support animations: ${node.id}`);
+        const node = await getSceneNodeById(nodeId);
+        if (!isMotionNode(node)) {
+          throw new Error(`Node does not support animations: ${nodeId}`);
         }
         return {
           type: request.type,
@@ -1705,11 +1708,11 @@ const handleRequest = async (
         if (!nodeId) throw new Error("nodeIds is required for apply_animation_style");
         const styleId = request.params?.styleId;
         if (typeof styleId !== "string") throw new Error("styleId is required for apply_animation_style");
-        const node = await getSceneNodeById(nodeId) as any;
-        if (!("applyAnimationStyle" in node)) {
-          throw new Error(`Node does not support applyAnimationStyle: ${node.id}`);
+        const node = await getSceneNodeById(nodeId);
+        if (!isMotionNode(node)) {
+          throw new Error(`Node does not support applyAnimationStyle: ${nodeId}`);
         }
-        const animationStyleData = request.params?.animationStyleData as Record<string, unknown> | undefined;
+        const animationStyleData = request.params?.animationStyleData as AnimationStyleConfiguration | undefined;
         node.applyAnimationStyle(styleId, animationStyleData);
         return {
           type: request.type,
@@ -1723,9 +1726,9 @@ const handleRequest = async (
       case "remove_animation_style": {
         const nodeId = request.nodeIds && request.nodeIds[0];
         if (!nodeId) throw new Error("nodeIds is required for remove_animation_style");
-        const node = await getSceneNodeById(nodeId) as any;
-        if (!("removeAnimationStyle" in node)) {
-          throw new Error(`Node does not support removeAnimationStyle: ${node.id}`);
+        const node = await getSceneNodeById(nodeId);
+        if (!isMotionNode(node)) {
+          throw new Error(`Node does not support removeAnimationStyle: ${nodeId}`);
         }
         const animationStyleId = request.params?.animationStyleId;
         if (typeof animationStyleId === "string") {
@@ -1753,15 +1756,18 @@ const handleRequest = async (
         const track = request.params?.track;
         if (!field || !track) throw new Error("field and track are required for apply_manual_keyframe_track");
         
-        const node = await getSceneNodeById(nodeId) as any;
-        if (!("applyManualKeyframeTrack" in node)) {
-          throw new Error(`Node does not support applyManualKeyframeTrack: ${node.id}`);
+        const node = await getSceneNodeById(nodeId);
+        if (!isMotionNode(node)) {
+          throw new Error(`Node does not support applyManualKeyframeTrack: ${nodeId}`);
         }
-        node.applyManualKeyframeTrack(field, track);
+        node.applyManualKeyframeTrack(field as KeyframeField, track as ManualKeyframeTrackInput);
         return {
           type: request.type,
           requestId: request.requestId,
-          data: { nodeId: node.id },
+          data: { 
+            nodeId: node.id,
+            manualKeyframeTracks: node.manualKeyframeTracks,
+          },
         };
       }
 
@@ -1771,15 +1777,18 @@ const handleRequest = async (
         const field = request.params?.field;
         if (!field) throw new Error("field is required for remove_manual_keyframe_track");
         
-        const node = await getSceneNodeById(nodeId) as any;
-        if (!("removeManualKeyframeTrack" in node)) {
-          throw new Error(`Node does not support removeManualKeyframeTrack: ${node.id}`);
+        const node = await getSceneNodeById(nodeId);
+        if (!isMotionNode(node)) {
+          throw new Error(`Node does not support removeManualKeyframeTrack: ${nodeId}`);
         }
-        node.removeManualKeyframeTrack(field);
+        node.removeManualKeyframeTrack(field as KeyframeField);
         return {
           type: request.type,
           requestId: request.requestId,
-          data: { nodeId: node.id },
+          data: { 
+            nodeId: node.id,
+            manualKeyframeTracks: node.manualKeyframeTracks,
+          },
         };
       }
 
@@ -1792,15 +1801,18 @@ const handleRequest = async (
           throw new Error("timelineId and duration are required for set_timeline_duration");
         }
         
-        const node = await getSceneNodeById(nodeId) as any;
-        if (!("setTimelineDuration" in node)) {
-          throw new Error(`Node does not support setTimelineDuration: ${node.id}`);
+        const node = await getSceneNodeById(nodeId);
+        if (!isMotionNode(node)) {
+          throw new Error(`Node does not support setTimelineDuration: ${nodeId}`);
         }
         node.setTimelineDuration(timelineId, duration);
         return {
           type: request.type,
           requestId: request.requestId,
-          data: { nodeId: node.id },
+          data: { 
+            nodeId: node.id,
+            timelines: node.timelines,
+          },
         };
       }
       default:

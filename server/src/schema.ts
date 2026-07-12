@@ -817,7 +817,7 @@ export const toolInputSchemas = {
   set_timeline_duration: z.object({
     nodeId: createFigmaNodeIdSchema().describe("The node ID whose timeline duration will be changed"),
     timelineId: z.string().describe("A timeline id read from the node's timelines array"),
-    duration: z.number().describe("The new timeline duration in seconds (must be greater than zero)"),
+    duration: z.number().positive().describe("The new timeline duration in seconds (must be greater than zero)"),
     fileKey: fileKeyField,
   }),
 } as const;
