@@ -15,6 +15,8 @@ import {
   setNodePropertiesInput,
   setGradientFillInput,
   setSolidFillInput,
+  setSolidFillShape,
+  setTextContentShape,
   setEffectsShape,
   setEffectsInput,
   setStrokePropertiesInput,
@@ -228,9 +230,12 @@ export function registerTools(
 
   server.tool(
     "set_text_content",
-    "Update the contents of a single text node. The plugin loads the node's fonts before applying the new text. When multiple files are connected, specify fileKey.",
-    toolInputSchemas.set_text_content.shape,
-    async ({ nodeId, text, fileKey }): Promise<ToolResult> => {
+    "Update the contents of a single text node. The plugin loads the node's fonts before applying the new text. Accepts either text or characters. When multiple files are connected, specify fileKey.",
+    setTextContentShape.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(toolInputSchemas.set_text_content, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeId, text, fileKey } = parsed.data;
       return renderResponse(() =>
         node.sendWithParams("set_text_content", [nodeId], { text }, fileKey)
       );
@@ -277,9 +282,12 @@ export function registerTools(
 
   server.tool(
     "set_solid_fill",
-    "Replace a node's fill (or stroke) with a single solid paint. Provide a hex color and optional paint opacity. Use set_gradient_fill for gradient paints.",
-    setSolidFillInput.shape,
-    async ({ nodeId, fileKey, ...params }): Promise<ToolResult> => {
+    "Replace a node's fill (or stroke) with a single solid paint. Provide a hex color and optional paint opacity — fillHex/fillOpacity are accepted as aliases. Use set_gradient_fill for gradient paints.",
+    setSolidFillShape.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(setSolidFillInput, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeId, fileKey, ...params } = parsed.data;
       return renderResponse(() =>
         node.sendWithParams("set_solid_fill", [nodeId], params, fileKey)
       );
@@ -739,7 +747,7 @@ async function renderResponse(
  * @returns Parsed data on success, or an error tool result on failure.
  */
 function parseToolInput<T>(
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   args: unknown
 ): { success: true; data: T } | { success: false; error: ToolResult } {
   const result = schema.safeParse(args);

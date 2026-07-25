@@ -38,6 +38,36 @@ const createHexColorSchema = () =>
       /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/,
       "Color must be a hex value like '#FFAA00'"
     );
+/**
+ * Accepts an alias for a canonical field name.
+ *
+ * The create_* tools name their colour/content fields `fillHex` and
+ * `characters`, while the set_* tools name the same concepts `hex` and `text`.
+ * Agents routinely carry the name they just used on create_* over to set_*
+ * and get a validation error for a field they did supply.
+ *
+ * This copies `alias` into `canonical` when only the alias is present, so both
+ * spellings work. The canonical name still wins when both are given, and the
+ * wire format sent to the plugin is unchanged.
+ *
+ * @param canonical - Field name the schema and plugin expect.
+ * @param alias - Alternative field name to accept.
+ * @returns A preprocessor that normalises the alias onto the canonical key.
+ */
+const acceptAlias =
+  (canonical: string, alias: string) =>
+  (value: unknown): unknown => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return value;
+    }
+    const input = value as Record<string, unknown>;
+    if (!(alias in input) || input[canonical] !== undefined) {
+      return value;
+    }
+    const { [alias]: aliased, ...rest } = input;
+    return { ...rest, [canonical]: aliased };
+  };
+
 const textAlignHorizontal = z.enum(["LEFT", "CENTER", "RIGHT", "JUSTIFIED"]);
 const textAlignVertical = z.enum(["TOP", "CENTER", "BOTTOM"]);
 const textAutoResize = z.enum([
@@ -121,7 +151,41 @@ export const setNodePropertiesInput = z.object({
   fileKey: fileKeyField,
 });
 
-export const setSolidFillInput = z.object({
+const solidFillTarget = z
+  .enum(["fill", "stroke"])
+  .optional()
+  .describe("Apply to fills or strokes (default fill)");
+
+/**
+ * Advertised shape. `fillHex`/`fillOpacity` are declared so the MCP SDK keeps
+ * them instead of stripping them as unknown keys; `setSolidFillInput`
+ * normalises them onto `hex`/`opacity` before the request reaches the plugin.
+ */
+export const setSolidFillShape = z.object({
+  nodeId: createFigmaNodeIdSchema().describe("The node ID to update"),
+  hex: createHexColorSchema()
+    .optional()
+    .describe("Solid color as hex (e.g. '#FFAA00')"),
+  fillHex: createHexColorSchema()
+    .optional()
+    .describe("Alias for hex, matching the create_* tools"),
+  opacity: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe("Optional paint opacity from 0 to 1 (default 1)"),
+  fillOpacity: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe("Alias for opacity, matching the create_* tools"),
+  target: solidFillTarget,
+  fileKey: fileKeyField,
+});
+
+const setSolidFillCanonical = z.object({
   nodeId: createFigmaNodeIdSchema().describe("The node ID to update"),
   hex: createHexColorSchema().describe("Solid color as hex (e.g. '#FFAA00')"),
   opacity: z
@@ -130,12 +194,19 @@ export const setSolidFillInput = z.object({
     .max(1)
     .optional()
     .describe("Optional paint opacity from 0 to 1 (default 1)"),
-  target: z
-    .enum(["fill", "stroke"])
-    .optional()
-    .describe("Apply to fills or strokes (default fill)"),
+  target: solidFillTarget,
   fileKey: fileKeyField,
 });
+
+export const setSolidFillInput: z.ZodType<
+  z.infer<typeof setSolidFillCanonical>,
+  z.ZodTypeDef,
+  unknown
+> = z.preprocess(
+  (value) =>
+    acceptAlias("opacity", "fillOpacity")(acceptAlias("hex", "fillHex")(value)),
+  setSolidFillCanonical
+);
 
 const blendMode = z.enum([
   "PASS_THROUGH",
@@ -378,6 +449,33 @@ export const createFrameInput = z.object({
     .describe("Optional solid fill opacity from 0 to 1"),
   fileKey: fileKeyField,
 });
+
+/**
+ * Advertised shape. `characters` is declared so the MCP SDK keeps it instead of
+ * stripping it as an unknown key; `setTextContentInput` normalises it onto
+ * `text` before the request reaches the plugin.
+ */
+export const setTextContentShape = z.object({
+  nodeId: createFigmaNodeIdSchema().describe("The text node ID to update"),
+  text: z.string().optional().describe("The new text content"),
+  characters: z
+    .string()
+    .optional()
+    .describe("Alias for text, matching create_text"),
+  fileKey: fileKeyField,
+});
+
+const setTextContentCanonical = z.object({
+  nodeId: createFigmaNodeIdSchema().describe("The text node ID to update"),
+  text: z.string().describe("The new text content"),
+  fileKey: fileKeyField,
+});
+
+export const setTextContentInput: z.ZodType<
+  z.infer<typeof setTextContentCanonical>,
+  z.ZodTypeDef,
+  unknown
+> = z.preprocess(acceptAlias("text", "characters"), setTextContentCanonical);
 
 export const setTextPropertiesShape = z.object({
   nodeId: createFigmaNodeIdSchema().describe("The text node ID to update"),
@@ -633,11 +731,7 @@ export const toolInputSchemas = {
     fileKey: fileKeyField,
   }),
 
-  set_text_content: z.object({
-    nodeId: createFigmaNodeIdSchema().describe("The text node ID to update"),
-    text: z.string().describe("The new text content"),
-    fileKey: fileKeyField,
-  }),
+  set_text_content: setTextContentInput,
 
   set_text_properties: setTextPropertiesInput,
 
