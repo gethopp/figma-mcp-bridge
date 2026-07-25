@@ -561,6 +561,32 @@ export const createImageInput = z.object({
   fileKey: fileKeyField,
 });
 
+/**
+ * Wire shape for create_image on the follower -> leader RPC path.
+ *
+ * The tool handler resolves `source` (file path / URL / data URI) into
+ * `imageBase64` before sending, so the payload reaching `validateRpc` carries
+ * `imageBase64` and no `source`. Validating that against `createImageInput`
+ * failed every follower call with "Leader returned status 400".
+ *
+ * `source` stays accepted so a leader running an older server build — which
+ * still forwards the unresolved source — keeps validating.
+ */
+export const createImageWireInput = createImageInput
+  .omit({ source: true })
+  .extend({
+    source: createImageInput.shape.source.optional(),
+    imageBase64: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Base64 image payload resolved from source by the MCP server"),
+  })
+  .refine(
+    (value) => value.imageBase64 !== undefined || value.source !== undefined,
+    "Either source or imageBase64 is required"
+  );
+
 export const toolInputSchemas = {
   get_document: z.object({
     fileKey: fileKeyField,
@@ -697,7 +723,7 @@ export const toolInputSchemas = {
 
   create_shape: createShapeInput,
 
-  create_image: createImageInput,
+  create_image: createImageWireInput,
 
   duplicate_nodes: z.object({
     nodeIds: z
