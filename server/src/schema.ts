@@ -640,6 +640,15 @@ export const createImageInput = z.object({
   fileKey: fileKeyField,
 });
 
+// create_image resolves `source` inside the follower process before forwarding
+// the request. The leader therefore receives imageBase64 rather than the
+// public MCP input shape above.
+const createImageRpcInput = createImageInput
+  .omit({ source: true, fileKey: true })
+  .extend({
+    imageBase64: z.string().min(1),
+  });
+
 export const toolInputSchemas = {
   get_document: z.object({
     fileKey: fileKeyField,
@@ -899,6 +908,11 @@ export const toolInputSchemas = {
 
 type ToolName = keyof typeof toolInputSchemas;
 
+const rpcInputSchemas = {
+  ...toolInputSchemas,
+  create_image: createImageRpcInput,
+} as const;
+
 /**
  * Maps the RPC wire format { tool, nodeIds?, params? } to each tool's
  * expected input shape. Typed as Record<ToolName, ...> so adding a schema
@@ -989,7 +1003,7 @@ export function validateRpc(
   if (!(tool in toolInputSchemas)) return { error: null };
 
   const name = tool as ToolName;
-  const result = toolInputSchemas[name].safeParse(
+  const result = rpcInputSchemas[name].safeParse(
     rpcToArgs[name](nodeIds, params)
   );
   if (!result.success) {
