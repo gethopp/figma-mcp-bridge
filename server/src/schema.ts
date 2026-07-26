@@ -38,36 +38,6 @@ const createHexColorSchema = () =>
       /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/,
       "Color must be a hex value like '#FFAA00'"
     );
-/**
- * Accepts an alias for a canonical field name.
- *
- * The create_* tools name their colour/content fields `fillHex` and
- * `characters`, while the set_* tools name the same concepts `hex` and `text`.
- * Agents routinely carry the name they just used on create_* over to set_*
- * and get a validation error for a field they did supply.
- *
- * This copies `alias` into `canonical` when only the alias is present, so both
- * spellings work. The canonical name still wins when both are given, and the
- * wire format sent to the plugin is unchanged.
- *
- * @param canonical - Field name the schema and plugin expect.
- * @param alias - Alternative field name to accept.
- * @returns A preprocessor that normalises the alias onto the canonical key.
- */
-const acceptAlias =
-  (canonical: string, alias: string) =>
-  (value: unknown): unknown => {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
-      return value;
-    }
-    const input = value as Record<string, unknown>;
-    if (!(alias in input) || input[canonical] !== undefined) {
-      return value;
-    }
-    const { [alias]: aliased, ...rest } = input;
-    return { ...rest, [canonical]: aliased };
-  };
-
 const textAlignHorizontal = z.enum(["LEFT", "CENTER", "RIGHT", "JUSTIFIED"]);
 const textAlignVertical = z.enum(["TOP", "CENTER", "BOTTOM"]);
 const textAutoResize = z.enum([
@@ -165,10 +135,14 @@ export const setSolidFillShape = z.object({
   nodeId: createFigmaNodeIdSchema().describe("The node ID to update"),
   hex: createHexColorSchema()
     .optional()
-    .describe("Solid color as hex (e.g. '#FFAA00')"),
+    .describe(
+      "Solid color as hex (e.g. '#FFAA00'). Required unless fillHex is given."
+    ),
   fillHex: createHexColorSchema()
     .optional()
-    .describe("Alias for hex, matching the create_* tools"),
+    .describe(
+      "Alias for hex, matching the create_* tools. Supply one of the two."
+    ),
   opacity: z
     .number()
     .min(0)
@@ -185,27 +159,24 @@ export const setSolidFillShape = z.object({
   fileKey: fileKeyField,
 });
 
-const setSolidFillCanonical = z.object({
-  nodeId: createFigmaNodeIdSchema().describe("The node ID to update"),
-  hex: createHexColorSchema().describe("Solid color as hex (e.g. '#FFAA00')"),
-  opacity: z
-    .number()
-    .min(0)
-    .max(1)
-    .optional()
-    .describe("Optional paint opacity from 0 to 1 (default 1)"),
-  target: solidFillTarget,
-  fileKey: fileKeyField,
-});
-
-export const setSolidFillInput: z.ZodType<
-  z.infer<typeof setSolidFillCanonical>,
-  z.ZodTypeDef,
-  unknown
-> = z.preprocess(
-  (value) =>
-    acceptAlias("opacity", "fillOpacity")(acceptAlias("hex", "fillHex")(value)),
-  setSolidFillCanonical
+/**
+ * Normalises the create_* spellings onto the canonical fields. Derived from the
+ * advertised shape so the two cannot drift; the canonical name wins when both
+ * spellings are supplied.
+ */
+export const setSolidFillInput = setSolidFillShape.transform(
+  ({ fillHex, fillOpacity, ...rest }, ctx) => {
+    const hex = rest.hex ?? fillHex;
+    if (hex === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["hex"],
+        message: "hex is required (fillHex is accepted as an alias)",
+      });
+      return z.NEVER;
+    }
+    return { ...rest, hex, opacity: rest.opacity ?? fillOpacity };
+  }
 );
 
 const blendMode = z.enum([
@@ -457,25 +428,35 @@ export const createFrameInput = z.object({
  */
 export const setTextContentShape = z.object({
   nodeId: createFigmaNodeIdSchema().describe("The text node ID to update"),
-  text: z.string().optional().describe("The new text content"),
+  text: z
+    .string()
+    .optional()
+    .describe("The new text content. Required unless characters is given."),
   characters: z
     .string()
     .optional()
-    .describe("Alias for text, matching create_text"),
+    .describe("Alias for text, matching create_text. Supply one of the two."),
   fileKey: fileKeyField,
 });
 
-const setTextContentCanonical = z.object({
-  nodeId: createFigmaNodeIdSchema().describe("The text node ID to update"),
-  text: z.string().describe("The new text content"),
-  fileKey: fileKeyField,
-});
-
-export const setTextContentInput: z.ZodType<
-  z.infer<typeof setTextContentCanonical>,
-  z.ZodTypeDef,
-  unknown
-> = z.preprocess(acceptAlias("text", "characters"), setTextContentCanonical);
+/**
+ * Normalises `characters` onto `text`. Derived from the advertised shape so the
+ * two cannot drift; `text` wins when both spellings are supplied.
+ */
+export const setTextContentInput = setTextContentShape.transform(
+  ({ characters, ...rest }, ctx) => {
+    const text = rest.text ?? characters;
+    if (text === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["text"],
+        message: "text is required (characters is accepted as an alias)",
+      });
+      return z.NEVER;
+    }
+    return { ...rest, text };
+  }
+);
 
 export const setTextPropertiesShape = z.object({
   nodeId: createFigmaNodeIdSchema().describe("The text node ID to update"),
@@ -975,19 +956,53 @@ const rpcToArgs: Record<
 };
 
 /**
+ * Result of validating an RPC request.
+ *
+ * `params` carries the schema's output so callers forward normalised values
+ * rather than the caller's raw object. Without it a schema that rewrites input
+ * — such as the create_* field aliases on `set_solid_fill` / `set_text_content`
+ * — would pass validation here and then be rejected by the plugin, which only
+ * understands the canonical spelling.
+ */
+export interface RpcValidation {
+  /** Human-readable message when validation failed, null when it passed. */
+  error: string | null;
+  /**
+   * Normalised params to forward to the plugin. Undefined when validation
+   * failed, or when the tool has no schema and nothing was normalised — in that
+   * case forward the caller's original params.
+   */
+  params?: Record<string, unknown>;
+}
+
+/**
  * Validate an RPC request against the corresponding tool's input schema.
- * Returns an error string on failure, null if valid or no schema exists for the tool.
+ *
+ * Tools without a schema are passed through unvalidated, matching the previous
+ * behaviour.
  */
 export function validateRpc(
   tool: string,
   nodeIds?: string[],
   params?: Record<string, unknown>
-): string | null {
-  if (!(tool in toolInputSchemas)) return null;
+): RpcValidation {
+  if (!(tool in toolInputSchemas)) return { error: null };
 
   const name = tool as ToolName;
   const result = toolInputSchemas[name].safeParse(
     rpcToArgs[name](nodeIds, params)
   );
-  return result.success ? null : result.error.issues[0].message;
+  if (!result.success) {
+    return { error: result.error.issues[0].message };
+  }
+
+  // `rpcToArgs` folds the transport-level `nodeIds` into a `nodeId` field so the
+  // tool schema can validate it. The plugin reads node ids off `request.nodeIds`
+  // instead, so drop it again — along with `fileKey`, which travels beside the
+  // params rather than inside them.
+  const { nodeId: _nodeId, fileKey: _fileKey, ...rest } = result.data as Record<
+    string,
+    unknown
+  >;
+  return { error: null, params: rest };
 }

@@ -91,22 +91,26 @@ export class Leader {
           return;
         }
 
-        const validationError = validateRpc(
+        const validation = validateRpc(
           rpcReq.tool,
           rpcReq.nodeIds,
           rpcReq.params
         );
-        if (validationError) {
-          this.sendJSON(res, 400, { error: validationError });
+        if (validation.error) {
+          this.sendJSON(res, 400, { error: validation.error });
           return;
         }
 
+        // Forward the schema's output, not the caller's raw object: schemas may
+        // normalise input (e.g. the create_* field aliases), and the plugin only
+        // understands the canonical spelling.
+        const validatedParams = validation.params ?? rpcReq.params;
         const fileKey = rpcReq.fileKey;
 
         // Currently the only tool that is not forwarded to the plugin is save_screenshots
         // If more are added we need to refactor to a better abstraction.
         if (rpcReq.tool === "save_screenshots") {
-          const params = rpcReq.params ?? {};
+          const params = validatedParams ?? {};
           // Create a sender bound to the specific fileKey
           const sender = {
             sendWithParams: (
@@ -135,7 +139,7 @@ export class Leader {
         const resp = await this.bridge.sendWithParams(
           rpcReq.tool,
           rpcReq.nodeIds,
-          rpcReq.params,
+          validatedParams,
           fileKey
         );
 

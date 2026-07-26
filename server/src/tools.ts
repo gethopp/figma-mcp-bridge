@@ -747,6 +747,8 @@ async function renderResponse(
  * @returns Parsed data on success, or an error tool result on failure.
  */
 function parseToolInput<T>(
+  // Input type is left open so transforming schemas (whose output differs from
+  // their input, e.g. the alias-normalising set_* inputs) can be passed in.
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   args: unknown
 ): { success: true; data: T } | { success: false; error: ToolResult } {
