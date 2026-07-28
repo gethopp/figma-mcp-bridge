@@ -1,5 +1,7 @@
 # Figma MCP Bridge
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fgethopp%2Ffigma-mcp-bridge.svg)](https://mcptoplist.com/server/glama%2Fgethopp%2Ffigma-mcp-bridge)
+
 [![Pairing with Hopp](https://gethopp.app/git/hopp-shield.svg?ref=hopp-repo)](https://gethopp.app)
 
 - [Demo](#demo)
