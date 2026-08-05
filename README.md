@@ -91,6 +91,7 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `set_effects` | Replace a node's effects list (drop/inner shadows, layer/background blurs) |
 | `set_stroke_properties` | Patch stroke weight, align, dash pattern, cap, and join |
 | `set_auto_layout` | Configure auto-layout direction, padding, gap, alignment, sizing, and wrap |
+| `create_page` | Create a new page in the document, optionally switching to it |
 | `create_frame` | Create a new frame, optionally under a parent |
 | `create_text` | Create a new text node |
 | `create_shape` | Create a rectangle, ellipse, or line |
@@ -113,6 +114,7 @@ All tools accept an optional `fileKey` parameter when multiple Figma files are c
 - Text edits automatically load the fonts currently used by the target text node before applying the new content.
 - New text nodes default to `Inter Regular` unless a font is provided.
 - `create_image` reads local paths relative to the MCP server working directory unless you pass an absolute path.
+- `create_page` returns the new page's ID — pass it as `parentId` to `create_frame` / `create_text` / `create_shape` / `create_image` to author content on that page without switching the editor.
 
 ### What You Can Build
 
