@@ -400,6 +400,21 @@ export const setAutoLayoutInput = z.object({
   fileKey: fileKeyField,
 });
 
+export const createPageInput = z.object({
+  name: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Optional page name (defaults to Figma's 'Page N')"),
+  setAsCurrent: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, switch the editor to the new page after creating it (default false)"
+    ),
+  fileKey: fileKeyField,
+});
+
 export const createFrameInput = z.object({
   name: z.string().optional().describe("Optional frame name"),
   parentId: createFigmaNodeIdSchema()
@@ -763,6 +778,8 @@ export const toolInputSchemas = {
     "At least one property must be provided"
   ),
 
+  create_page: createPageInput,
+
   create_frame: createFrameInput.refine(
     (value) => value.fillOpacity === undefined || value.fillHex !== undefined,
     "fillHex is required when fillOpacity is provided"
@@ -934,6 +951,7 @@ const rpcToArgs: Record<
     nodeId: nodeIds?.[0],
   }),
   set_auto_layout: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  create_page: (_nodeIds, params) => ({ ...params }),
   create_frame: (_nodeIds, params) => ({ ...params }),
   create_text: (_nodeIds, params) => ({ ...params }),
   create_shape: (_nodeIds, params) => ({ ...params }),
