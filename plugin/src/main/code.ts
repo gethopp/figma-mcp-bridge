@@ -18,6 +18,7 @@ type RequestType =
   | "set_effects"
   | "set_stroke_properties"
   | "set_auto_layout"
+  | "create_page"
   | "create_frame"
   | "create_text"
   | "create_shape"
@@ -354,6 +355,7 @@ const EDIT_REQUEST_TYPES = new Set<RequestType>([
   "set_effects",
   "set_stroke_properties",
   "set_auto_layout",
+  "create_page",
   "create_frame",
   "create_text",
   "create_shape",
@@ -1243,6 +1245,32 @@ const handleRequest = async (
             nodeId: node.id,
             nodeName: node.name,
             applied,
+          },
+        };
+      }
+      case "create_page": {
+        const params = request.params ?? {};
+        const page = figma.createPage();
+
+        if (typeof params.name === "string") {
+          page.name = params.name;
+        }
+
+        // The document is loaded with `documentAccess: "dynamic-page"`, so the
+        // page must be switched with the async setter — assigning
+        // `figma.currentPage` directly throws there.
+        if (params.setAsCurrent === true) {
+          await figma.setCurrentPageAsync(page);
+        }
+
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: {
+            pageId: page.id,
+            pageName: page.name,
+            index: figma.root.children.indexOf(page),
+            isCurrentPage: figma.currentPage.id === page.id,
           },
         };
       }
