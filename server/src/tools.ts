@@ -8,6 +8,7 @@ import type { Node } from "./node.js";
 import {
   createFrameInput,
   createImageInput,
+  createPageInput,
   createShapeShape,
   createTextShape,
   createShapeInput,
@@ -346,6 +347,20 @@ export function registerTools(
       const { nodeId, fileKey, ...params } = parsed.data;
       return renderResponse(() =>
         node.sendWithParams("set_auto_layout", [nodeId], params, fileKey)
+      );
+    }
+  );
+
+  server.tool(
+    "create_page",
+    "Create a new page in the Figma document, optionally naming it and switching the editor to it. Returns the new page's ID, which can be passed as parentId to create_frame / create_text / create_shape / create_image to author content on that page. When multiple files are connected, specify fileKey.",
+    createPageInput.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(toolInputSchemas.create_page, args);
+      if (!parsed.success) return parsed.error;
+      const { fileKey, ...params } = parsed.data;
+      return renderResponse(() =>
+        node.sendWithParams("create_page", undefined, params, fileKey)
       );
     }
   );
