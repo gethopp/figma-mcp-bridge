@@ -33,7 +33,12 @@ export class Follower {
     });
 
     if (!response.ok) {
-      throw new Error(`Leader returned status ${response.status}`);
+      // The leader answers validation failures with a 400 whose body names the
+      // offending field — surface it instead of a bare status code (#35).
+      const body = (await response.json().catch(() => null)) as RPCResponse | null;
+      throw new Error(
+        body?.error ?? `Leader returned status ${response.status}`
+      );
     }
 
     const rpcResp = (await response.json()) as RPCResponse;

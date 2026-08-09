@@ -900,6 +900,37 @@ export const toolInputSchemas = {
 type ToolName = keyof typeof toolInputSchemas;
 
 /**
+ * Wire-format schema for create_image on the follower→leader RPC path.
+ *
+ * The create_image tool handler resolves `source` (file path / URL / data URI)
+ * into `imageBase64` before forwarding, so the payload on the wire carries
+ * `imageBase64` and never `source`. `fileKey` is omitted too — it travels
+ * beside the params as a separate `sendWithParams` argument. Validating this
+ * path against the advertised `createImageInput` (which requires `source`)
+ * rejected every follower create_image call with a 400 (#35).
+ */
+const createImageRpcInput = createImageInput
+  .omit({ source: true, fileKey: true })
+  .extend({
+    imageBase64: z
+      .string()
+      .min(1)
+      .describe(
+        "Base64-encoded image bytes, resolved from `source` by the tool handler"
+      ),
+  });
+
+/**
+ * Schemas the RPC path validates against. Tools whose handlers rewrite the
+ * payload before forwarding validate their wire shape here; every other tool
+ * validates against its advertised MCP input schema.
+ */
+const rpcInputSchemas = {
+  ...toolInputSchemas,
+  create_image: createImageRpcInput,
+} as const;
+
+/**
  * Maps the RPC wire format { tool, nodeIds?, params? } to each tool's
  * expected input shape. Typed as Record<ToolName, ...> so adding a schema
  * without a mapper is a compile error.
@@ -986,10 +1017,10 @@ export function validateRpc(
   nodeIds?: string[],
   params?: Record<string, unknown>
 ): RpcValidation {
-  if (!(tool in toolInputSchemas)) return { error: null };
+  if (!(tool in rpcInputSchemas)) return { error: null };
 
   const name = tool as ToolName;
-  const result = toolInputSchemas[name].safeParse(
+  const result = rpcInputSchemas[name].safeParse(
     rpcToArgs[name](nodeIds, params)
   );
   if (!result.success) {
