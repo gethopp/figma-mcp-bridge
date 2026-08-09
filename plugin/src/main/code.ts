@@ -212,7 +212,9 @@ const setSolidFill = (
     if (!("strokes" in node)) {
       throw new Error(`Node does not support strokes: ${node.id}`);
     }
-    (node as GeometryMixin & { strokes: ReadonlyArray<Paint> }).strokes = [paint];
+    (node as GeometryMixin & { strokes: ReadonlyArray<Paint> }).strokes = [
+      paint,
+    ];
     return;
   }
 
@@ -271,7 +273,9 @@ const loadFontsForTextNode = async (node: TextNode): Promise<void> => {
     );
   }
 
-  await Promise.all([...fonts.values()].map((font) => figma.loadFontAsync(font)));
+  await Promise.all(
+    [...fonts.values()].map((font) => figma.loadFontAsync(font))
+  );
 };
 
 const ensureFont = async (family: string, style: string): Promise<FontName> => {
@@ -294,11 +298,7 @@ const applyTextFill = (
   ];
 };
 
-const positionNode = (
-  node: SceneNode,
-  x: unknown,
-  y: unknown
-): void => {
+const positionNode = (node: SceneNode, x: unknown, y: unknown): void => {
   if ("x" in node && typeof x === "number") {
     node.x = x;
   }
@@ -312,10 +312,7 @@ const resizeNodeIfSupported = (
   width: unknown,
   height: unknown
 ): void => {
-  if (
-    typeof width !== "number" &&
-    typeof height !== "number"
-  ) {
+  if (typeof width !== "number" && typeof height !== "number") {
     return;
   }
   if (!("resize" in node) || typeof node.resize !== "function") {
@@ -334,6 +331,9 @@ const appendToParentIfProvided = async (
     return;
   }
   const parent = await getParentNodeById(parentId);
+  if (parent.type === "PAGE") {
+    await (parent as PageNode).loadAsync();
+  }
   parent.appendChild(node);
 };
 
@@ -727,7 +727,10 @@ const handleRequest = async (
 
         await loadFontsForTextNode(node);
 
-        if (typeof params.fontFamily === "string" || typeof params.fontStyle === "string") {
+        if (
+          typeof params.fontFamily === "string" ||
+          typeof params.fontStyle === "string"
+        ) {
           const currentFontName =
             typeof node.fontName === "symbol" ? null : node.fontName;
           const nextFamily =
@@ -801,7 +804,9 @@ const handleRequest = async (
 
         if (typeof params.fillHex === "string") {
           const fillOpacity =
-            typeof params.fillOpacity === "number" ? params.fillOpacity : undefined;
+            typeof params.fillOpacity === "number"
+              ? params.fillOpacity
+              : undefined;
           applyTextFill(node, params.fillHex, fillOpacity);
           applied.fillHex = params.fillHex;
           applied.fillOpacity = fillOpacity ?? 1;
@@ -814,7 +819,10 @@ const handleRequest = async (
         }
 
         resizeNodeIfSupported(node, params.width, params.height);
-        if (typeof params.width === "number" || typeof params.height === "number") {
+        if (
+          typeof params.width === "number" ||
+          typeof params.height === "number"
+        ) {
           applied.width = node.width;
           applied.height = node.height;
         }
@@ -841,7 +849,9 @@ const handleRequest = async (
         const hasUpdates = Object.keys(params).length > 0;
 
         if (!hasUpdates) {
-          throw new Error("At least one property is required for set_node_properties");
+          throw new Error(
+            "At least one property is required for set_node_properties"
+          );
         }
 
         if (typeof params.name === "string") {
@@ -856,14 +866,19 @@ const handleRequest = async (
 
         if (typeof params.x === "number" || typeof params.y === "number") {
           if (!("x" in node) || !("y" in node)) {
-            throw new Error(`Node does not support x/y positioning: ${node.id}`);
+            throw new Error(
+              `Node does not support x/y positioning: ${node.id}`
+            );
           }
           positionNode(node, params.x, params.y);
           applied.x = node.x;
           applied.y = node.y;
         }
 
-        if (typeof params.width === "number" || typeof params.height === "number") {
+        if (
+          typeof params.width === "number" ||
+          typeof params.height === "number"
+        ) {
           resizeNodeIfSupported(node, params.width, params.height);
           applied.width = node.width;
           applied.height = node.height;
@@ -966,13 +981,17 @@ const handleRequest = async (
           throw new Error(`Unsupported gradient type: ${gradientType}`);
         }
 
-        if (!Array.isArray(params.gradientStops) || params.gradientStops.length < 2) {
+        if (
+          !Array.isArray(params.gradientStops) ||
+          params.gradientStops.length < 2
+        ) {
           throw new Error("gradientStops must have at least 2 entries");
         }
         const stops = params.gradientStops as GradientStopInput[];
 
         const transform =
-          Array.isArray(params.gradientTransform) && params.gradientTransform.length === 2
+          Array.isArray(params.gradientTransform) &&
+          params.gradientTransform.length === 2
             ? (params.gradientTransform as Transform)
             : undefined;
 
@@ -982,9 +1001,12 @@ const handleRequest = async (
         const paint = buildGradientPaint(paintType, stops, transform, opacity);
 
         if (target === "fill") {
-          (node as GeometryMixin & { fills: ReadonlyArray<Paint> }).fills = [paint];
+          (node as GeometryMixin & { fills: ReadonlyArray<Paint> }).fills = [
+            paint,
+          ];
         } else {
-          (node as GeometryMixin & { strokes: ReadonlyArray<Paint> }).strokes = [paint];
+          (node as GeometryMixin & { strokes: ReadonlyArray<Paint> }).strokes =
+            [paint];
         }
 
         return {
@@ -1024,7 +1046,9 @@ const handleRequest = async (
               if (typeof raw.color !== "string") {
                 throw new Error(`effects[${i}].color must be a hex string`);
               }
-              const offset = raw.offset as { x?: unknown; y?: unknown } | undefined;
+              const offset = raw.offset as
+                | { x?: unknown; y?: unknown }
+                | undefined;
               if (
                 !offset ||
                 typeof offset.x !== "number" ||
@@ -1043,7 +1067,8 @@ const handleRequest = async (
                 offset: { x: offset.x, y: offset.y },
                 radius: raw.radius,
                 spread: typeof raw.spread === "number" ? raw.spread : 0,
-                visible: raw.visible === undefined ? true : Boolean(raw.visible),
+                visible:
+                  raw.visible === undefined ? true : Boolean(raw.visible),
                 blendMode:
                   typeof raw.blendMode === "string"
                     ? (raw.blendMode as BlendMode)
@@ -1057,14 +1082,18 @@ const handleRequest = async (
               return {
                 type,
                 radius: raw.radius,
-                visible: raw.visible === undefined ? true : Boolean(raw.visible),
+                visible:
+                  raw.visible === undefined ? true : Boolean(raw.visible),
               } as Effect;
             }
-            throw new Error(`Unsupported effect type at effects[${i}]: ${String(type)}`);
+            throw new Error(
+              `Unsupported effect type at effects[${i}]: ${String(type)}`
+            );
           }
         );
 
-        (node as BlendMixin & { effects: ReadonlyArray<Effect> }).effects = built;
+        (node as BlendMixin & { effects: ReadonlyArray<Effect> }).effects =
+          built;
 
         return {
           type: request.type,
@@ -1112,7 +1141,9 @@ const handleRequest = async (
           }
           const pattern = (params.dashPattern as unknown[]).map((n, i) => {
             if (typeof n !== "number" || n < 0) {
-              throw new Error(`dashPattern[${i}] must be a non-negative number`);
+              throw new Error(
+                `dashPattern[${i}] must be a non-negative number`
+              );
             }
             return n;
           });
@@ -1176,8 +1207,9 @@ const handleRequest = async (
           applied.itemSpacing = params.itemSpacing;
         }
         if (typeof params.counterAxisSpacing === "number") {
-          (frame as FrameNode & { counterAxisSpacing: number }).counterAxisSpacing =
-            params.counterAxisSpacing;
+          (
+            frame as FrameNode & { counterAxisSpacing: number }
+          ).counterAxisSpacing = params.counterAxisSpacing;
           applied.counterAxisSpacing = params.counterAxisSpacing;
         }
 
@@ -1288,7 +1320,9 @@ const handleRequest = async (
 
         if (typeof params.fillHex === "string") {
           const fillOpacity =
-            typeof params.fillOpacity === "number" ? params.fillOpacity : undefined;
+            typeof params.fillOpacity === "number"
+              ? params.fillOpacity
+              : undefined;
           setSolidFill(frame, params.fillHex, fillOpacity);
         }
 
@@ -1330,7 +1364,9 @@ const handleRequest = async (
         }
         if (typeof params.fillHex === "string") {
           const fillOpacity =
-            typeof params.fillOpacity === "number" ? params.fillOpacity : undefined;
+            typeof params.fillOpacity === "number"
+              ? params.fillOpacity
+              : undefined;
           applyTextFill(text, params.fillHex, fillOpacity);
         }
 
@@ -1395,12 +1431,16 @@ const handleRequest = async (
         }
 
         if (shapeType === "LINE" && typeof params.fillHex === "string") {
-          throw new Error("LINE shapes do not support fillHex — use strokeHex instead");
+          throw new Error(
+            "LINE shapes do not support fillHex — use strokeHex instead"
+          );
         }
 
         if (typeof params.fillHex === "string") {
           const fillOpacity =
-            typeof params.fillOpacity === "number" ? params.fillOpacity : undefined;
+            typeof params.fillOpacity === "number"
+              ? params.fillOpacity
+              : undefined;
           setSolidFill(node, params.fillHex, fillOpacity);
         }
 
@@ -1415,14 +1455,13 @@ const handleRequest = async (
             throw new Error(`Node does not support strokes: ${node.id}`);
           }
           const strokeOpacity =
-            typeof params.strokeOpacity === "number" ? params.strokeOpacity : undefined;
+            typeof params.strokeOpacity === "number"
+              ? params.strokeOpacity
+              : undefined;
           setSolidFill(node, params.strokeHex, strokeOpacity, "stroke");
         }
 
-        if (
-          "strokeWeight" in node &&
-          typeof params.strokeWeight === "number"
-        ) {
+        if ("strokeWeight" in node && typeof params.strokeWeight === "number") {
           node.strokeWeight = params.strokeWeight;
         }
 
@@ -1450,11 +1489,16 @@ const handleRequest = async (
       }
       case "create_image": {
         const params = request.params ?? {};
-        if (typeof params.imageBase64 !== "string" || params.imageBase64.length === 0) {
+        if (
+          typeof params.imageBase64 !== "string" ||
+          params.imageBase64.length === 0
+        ) {
           throw new Error("imageBase64 is required for create_image");
         }
 
-        const image = figma.createImage(decodeBase64ToBytes(params.imageBase64));
+        const image = figma.createImage(
+          decodeBase64ToBytes(params.imageBase64)
+        );
         const imageSize = await image.getSizeAsync();
         const node = figma.createRectangle();
 
@@ -1680,7 +1724,9 @@ const handleRequest = async (
           throw new Error("nodeIds is required for delete_nodes");
         }
 
-        const nodes = await Promise.all(request.nodeIds.map((nodeId) => getSceneNodeById(nodeId)));
+        const nodes = await Promise.all(
+          request.nodeIds.map((nodeId) => getSceneNodeById(nodeId))
+        );
         const deletions = nodes.map((node) => ({
           nodeId: node.id,
           nodeName: node.name,
@@ -1703,7 +1749,9 @@ const handleRequest = async (
       case "get_motion_styles": {
         const motion = figma.motion;
         if (!motion || typeof motion.figmaAnimationStyles !== "function") {
-          throw new Error("figma.motion.figmaAnimationStyles is not available in this Figma version");
+          throw new Error(
+            "figma.motion.figmaAnimationStyles is not available in this Figma version"
+          );
         }
         return {
           type: request.type,
@@ -1733,14 +1781,20 @@ const handleRequest = async (
       }
       case "apply_animation_style": {
         const nodeId = request.nodeIds && request.nodeIds[0];
-        if (!nodeId) throw new Error("nodeIds is required for apply_animation_style");
+        if (!nodeId)
+          throw new Error("nodeIds is required for apply_animation_style");
         const styleId = request.params?.styleId;
-        if (typeof styleId !== "string") throw new Error("styleId is required for apply_animation_style");
+        if (typeof styleId !== "string")
+          throw new Error("styleId is required for apply_animation_style");
         const node = await getSceneNodeById(nodeId);
         if (!isMotionNode(node)) {
-          throw new Error(`Node does not support applyAnimationStyle: ${nodeId}`);
+          throw new Error(
+            `Node does not support applyAnimationStyle: ${nodeId}`
+          );
         }
-        const animationStyleData = request.params?.animationStyleData as AnimationStyleConfiguration | undefined;
+        const animationStyleData = request.params?.animationStyleData as
+          | AnimationStyleConfiguration
+          | undefined;
         node.applyAnimationStyle(styleId, animationStyleData);
         return {
           type: request.type,
@@ -1753,10 +1807,13 @@ const handleRequest = async (
       }
       case "remove_animation_style": {
         const nodeId = request.nodeIds && request.nodeIds[0];
-        if (!nodeId) throw new Error("nodeIds is required for remove_animation_style");
+        if (!nodeId)
+          throw new Error("nodeIds is required for remove_animation_style");
         const node = await getSceneNodeById(nodeId);
         if (!isMotionNode(node)) {
-          throw new Error(`Node does not support removeAnimationStyle: ${nodeId}`);
+          throw new Error(
+            `Node does not support removeAnimationStyle: ${nodeId}`
+          );
         }
         const animationStyleId = request.params?.animationStyleId;
         if (typeof animationStyleId === "string") {
@@ -1779,20 +1836,31 @@ const handleRequest = async (
 
       case "apply_manual_keyframe_track": {
         const nodeId = request.nodeIds && request.nodeIds[0];
-        if (!nodeId) throw new Error("nodeIds is required for apply_manual_keyframe_track");
+        if (!nodeId)
+          throw new Error(
+            "nodeIds is required for apply_manual_keyframe_track"
+          );
         const field = request.params?.field;
         const track = request.params?.track;
-        if (!field || !track) throw new Error("field and track are required for apply_manual_keyframe_track");
-        
+        if (!field || !track)
+          throw new Error(
+            "field and track are required for apply_manual_keyframe_track"
+          );
+
         const node = await getSceneNodeById(nodeId);
         if (!isMotionNode(node)) {
-          throw new Error(`Node does not support applyManualKeyframeTrack: ${nodeId}`);
+          throw new Error(
+            `Node does not support applyManualKeyframeTrack: ${nodeId}`
+          );
         }
-        node.applyManualKeyframeTrack(field as KeyframeField, track as ManualKeyframeTrackInput);
+        node.applyManualKeyframeTrack(
+          field as KeyframeField,
+          track as ManualKeyframeTrackInput
+        );
         return {
           type: request.type,
           requestId: request.requestId,
-          data: { 
+          data: {
             nodeId: node.id,
             manualKeyframeTracks: node.manualKeyframeTracks,
           },
@@ -1801,19 +1869,25 @@ const handleRequest = async (
 
       case "remove_manual_keyframe_track": {
         const nodeId = request.nodeIds && request.nodeIds[0];
-        if (!nodeId) throw new Error("nodeIds is required for remove_manual_keyframe_track");
+        if (!nodeId)
+          throw new Error(
+            "nodeIds is required for remove_manual_keyframe_track"
+          );
         const field = request.params?.field;
-        if (!field) throw new Error("field is required for remove_manual_keyframe_track");
-        
+        if (!field)
+          throw new Error("field is required for remove_manual_keyframe_track");
+
         const node = await getSceneNodeById(nodeId);
         if (!isMotionNode(node)) {
-          throw new Error(`Node does not support removeManualKeyframeTrack: ${nodeId}`);
+          throw new Error(
+            `Node does not support removeManualKeyframeTrack: ${nodeId}`
+          );
         }
         node.removeManualKeyframeTrack(field as KeyframeField);
         return {
           type: request.type,
           requestId: request.requestId,
-          data: { 
+          data: {
             nodeId: node.id,
             manualKeyframeTracks: node.manualKeyframeTracks,
           },
@@ -1822,22 +1896,27 @@ const handleRequest = async (
 
       case "set_timeline_duration": {
         const nodeId = request.nodeIds && request.nodeIds[0];
-        if (!nodeId) throw new Error("nodeIds is required for set_timeline_duration");
+        if (!nodeId)
+          throw new Error("nodeIds is required for set_timeline_duration");
         const timelineId = request.params?.timelineId;
         const duration = request.params?.duration;
         if (typeof timelineId !== "string" || typeof duration !== "number") {
-          throw new Error("timelineId and duration are required for set_timeline_duration");
+          throw new Error(
+            "timelineId and duration are required for set_timeline_duration"
+          );
         }
-        
+
         const node = await getSceneNodeById(nodeId);
         if (!isMotionNode(node)) {
-          throw new Error(`Node does not support setTimelineDuration: ${nodeId}`);
+          throw new Error(
+            `Node does not support setTimelineDuration: ${nodeId}`
+          );
         }
         node.setTimelineDuration(timelineId, duration);
         return {
           type: request.type,
           requestId: request.requestId,
-          data: { 
+          data: {
             nodeId: node.id,
             timelines: node.timelines,
           },
