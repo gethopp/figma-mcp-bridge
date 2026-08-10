@@ -14,21 +14,29 @@ async function main(): Promise<void> {
   const election = new Election(PORT, node);
   await election.start();
 
+  let transport: StdioServerTransport | null = null;
   let shuttingDown = false;
-  const shutdown = async (reason: string): Promise<void> => {
+  const shutdown = async (reason: string, code: number = 0): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.error(`Shutting down (${reason})...`);
 
     const force = setTimeout(() => {
       console.error("Shutdown timeout exceeded, forcing exit");
-      process.exit(0);
+      process.exit(code);
     }, 5000);
     force.unref();
 
     election.stop();
     node.stop();
-    process.exit(0);
+    if (transport) {
+      try {
+        await transport.close();
+      } catch (err) {
+        console.error("Transport close error:", err);
+      }
+    }
+    process.exit(code);
   };
 
   process.stdin.on("end", () => void shutdown("stdin end"));
@@ -40,7 +48,7 @@ async function main(): Promise<void> {
 
   process.on("uncaughtException", async (err) => {
     console.error("Uncaught exception:", err);
-    await shutdown("uncaughtException");
+    await shutdown("uncaughtException", 1);
   });
   process.on("unhandledRejection", (reason) => {
     console.error("Unhandled rejection:", reason);
@@ -55,7 +63,7 @@ async function main(): Promise<void> {
 
   console.error(`Starting MCP server (role: ${node.roleName})`);
 
-  const transport = new StdioServerTransport();
+  transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
