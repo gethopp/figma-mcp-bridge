@@ -51,7 +51,7 @@ type PluginStatus = {
   selectionCount: number;
 };
 
-const WS_BASE_URL = "ws://localhost:1994/ws";
+const WS_BASE_URL = `ws://localhost:${__FIGMA_BRIDGE_PORT__}/ws`;
 
 export default function App() {
   const [connected, setConnected] = useState(false);

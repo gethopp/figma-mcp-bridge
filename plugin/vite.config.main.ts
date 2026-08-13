@@ -1,5 +1,7 @@
 import { defineConfig } from "vite";
 
+const outputDirectory = process.env.FIGMA_PLUGIN_OUT_DIR ?? "dist";
+
 export default defineConfig({
   build: {
     target: "es2015",
@@ -9,7 +11,7 @@ export default defineConfig({
       name: "code",
       fileName: () => "code.js"
     },
-    outDir: "dist",
+    outDir: outputDirectory,
     emptyOutDir: false,
     minify: false
   }

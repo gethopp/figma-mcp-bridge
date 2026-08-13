@@ -4,10 +4,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Node } from "./node.js";
 import { Election } from "./election.js";
+import { bridgePortFromEnvironment } from "./port.js";
 import { registerTools } from "./tools.js";
 import { VERSION } from "./version.js";
 
-const PORT = 1994;
+const PORT = bridgePortFromEnvironment();
 
 async function main(): Promise<void> {
 

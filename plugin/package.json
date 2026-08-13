@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"vite build --watch\" \"vite build --watch -c vite.config.main.ts\"",
-    "build": "vite build && vite build -c vite.config.main.ts"
+    "build": "vite build && vite build -c vite.config.main.ts",
+    "build:instance": "node scripts/build-instance.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
