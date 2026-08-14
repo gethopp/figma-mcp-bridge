@@ -295,6 +295,20 @@ export function registerTools(
   );
 
   server.tool(
+    "set_solid_fills",
+    "Replace the fill (or stroke) of many nodes with solid paints in a single round-trip. Each item takes the same fields as set_solid_fill. Items are independent: a bad nodeId fails only its own entry and the rest still apply. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.set_solid_fills.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(toolInputSchemas.set_solid_fills, args);
+      if (!parsed.success) return parsed.error;
+      const { items, fileKey } = parsed.data;
+      return renderResponse(() =>
+        node.sendWithParams("set_solid_fills", undefined, { items }, fileKey)
+      );
+    }
+  );
+
+  server.tool(
     "set_gradient_fill",
     "Replace a node's fill (or stroke) with a gradient paint. Provide ordered stops (position 0..1, hex color, optional alpha) and an optional 2x3 gradientTransform matching Figma's gradientTransform format. Useful for setting linear/radial/angular/diamond gradients programmatically.",
     setGradientFillInput.shape,

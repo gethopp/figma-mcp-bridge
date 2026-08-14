@@ -14,6 +14,7 @@ type RequestType =
   | "set_text_properties"
   | "set_node_properties"
   | "set_solid_fill"
+  | "set_solid_fills"
   | "set_gradient_fill"
   | "set_effects"
   | "set_stroke_properties"
@@ -221,6 +222,13 @@ const setSolidFill = (
   (node as GeometryMixin & { fills: ReadonlyArray<Paint> }).fills = [paint];
 };
 
+
+
+
+
+
+
+
 type GradientStopInput = { position: number; hex: string; opacity?: number };
 type GradientPaintType =
   | "GRADIENT_LINEAR"
@@ -350,6 +358,7 @@ const EDIT_REQUEST_TYPES = new Set<RequestType>([
   "set_text_properties",
   "set_node_properties",
   "set_solid_fill",
+  "set_solid_fills",
   "set_gradient_fill",
   "set_effects",
   "set_stroke_properties",
@@ -931,6 +940,60 @@ const handleRequest = async (
               opacity: opacity ?? 1,
             },
           },
+        };
+      }
+      case "set_solid_fills": {
+        const rawItems = request.params?.items;
+        if (!Array.isArray(rawItems) || rawItems.length === 0) {
+          throw new Error("items is required for set_solid_fills");
+        }
+        const items = rawItems as Array<Record<string, unknown>>;
+        const results: Array<
+          | { nodeId: string; target: "fill" | "stroke" }
+          | { nodeId: string | null; error: string }
+        > = [];
+
+        // Sequential on purpose: these all mutate the document, and the
+        // round-trip being saved is the WebSocket one, not the local work.
+        for (const item of items) {
+          const nodeId = typeof item.nodeId === "string" ? item.nodeId : null;
+          try {
+            if (!nodeId) {
+              throw new Error("nodeId is required");
+            }
+            // fillHex/fillOpacity are accepted here too, so a caller can lift a
+            // set_solid_fill call into items without renaming its fields (#39).
+            const hex = typeof item.hex === "string" ? item.hex : item.fillHex;
+            if (typeof hex !== "string") {
+              throw new Error(
+                "hex is required (fillHex is accepted as an alias)"
+              );
+            }
+            const rawOpacity =
+              typeof item.opacity === "number"
+                ? item.opacity
+                : item.fillOpacity;
+            const node = await getSceneNodeById(nodeId);
+            const target = item.target === "stroke" ? "stroke" : "fill";
+            setSolidFill(
+              node,
+              hex,
+              typeof rawOpacity === "number" ? rawOpacity : undefined,
+              target
+            );
+            results.push({ nodeId, target });
+          } catch (error) {
+            results.push({
+              nodeId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: { results },
         };
       }
       case "set_gradient_fill": {
