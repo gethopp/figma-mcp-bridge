@@ -403,7 +403,7 @@ export const setAutoLayoutInput = z.object({
 export const createPageInput = z.object({
   name: z
     .string()
-    .min(1)
+    .trim().min(1)
     .optional()
     .describe("Optional page name (defaults to Figma's 'Page N')"),
   setAsCurrent: z
