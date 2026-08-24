@@ -179,6 +179,47 @@ export const setSolidFillInput = setSolidFillShape.transform(
   }
 );
 
+/**
+ * One node's worth of work for `set_solid_fills`. Mirrors `set_solid_fill`
+ * field for field, including the fillHex/fillOpacity aliases, so a caller can
+ * lift a single-node call straight into `items` without renaming anything.
+ */
+const createSolidFillItemSchema = () =>
+  z
+    .object({
+      nodeId: createFigmaNodeIdSchema().describe("The node ID to update"),
+      hex: createHexColorSchema()
+        .optional()
+        .describe("Solid color as hex (e.g. '#FFAA00')"),
+      fillHex: createHexColorSchema().optional().describe("Alias for hex"),
+      opacity: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe("Optional paint opacity from 0 to 1 (default 1)"),
+      fillOpacity: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe("Alias for opacity"),
+      target: solidFillTarget,
+    })
+    .refine((item) => item.hex !== undefined || item.fillHex !== undefined, {
+      message: "hex is required (fillHex is accepted as an alias)",
+    });
+
+export const setSolidFillsInput = z.object({
+  items: z
+    .array(createSolidFillItemSchema())
+    .min(1)
+    .describe(
+      "Fill/stroke updates, one entry per node, applied in a single round-trip"
+    ),
+  fileKey: fileKeyField,
+});
+
 const blendMode = z.enum([
   "PASS_THROUGH",
   "NORMAL",
@@ -735,6 +776,21 @@ export const toolInputSchemas = {
 
   set_solid_fill: setSolidFillInput,
 
+  set_solid_fills: setSolidFillsInput,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   set_effects: setEffectsInput,
 
   set_stroke_properties: setStrokePropertiesInput.refine(
@@ -976,6 +1032,7 @@ const rpcToArgs: Record<
   }),
   set_gradient_fill: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   set_solid_fill: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  set_solid_fills: (_nodeIds, params) => ({ ...params }),
   set_effects: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   set_stroke_properties: (nodeIds, params) => ({
     ...params,
