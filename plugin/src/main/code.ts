@@ -168,6 +168,12 @@ const getParentNodeById = async (
   if (!parent || parent.type === "DOCUMENT" || !supportsChildren(parent)) {
     throw new Error(`Parent does not support children: ${parentId}`);
   }
+  // Under `documentAccess: "dynamic-page"` a page's children are inaccessible
+  // until the page is explicitly loaded, so every caller would otherwise have
+  // to guard before appending.
+  if (parent.type === "PAGE") {
+    await parent.loadAsync();
+  }
   return parent;
 };
 
@@ -331,9 +337,6 @@ const appendToParentIfProvided = async (
     return;
   }
   const parent = await getParentNodeById(parentId);
-  if (parent.type === "PAGE") {
-    await (parent as PageNode).loadAsync();
-  }
   parent.appendChild(node);
 };
 
