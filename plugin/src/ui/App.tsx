@@ -51,7 +51,10 @@ type PluginStatus = {
   selectionCount: number;
 };
 
-const WS_BASE_URL = "ws://localhost:1994/ws";
+// `||` (not `??`) so an empty build-time value falls back to the default.
+// A custom endpoint must also be listed in manifest.json's
+// networkAccess.allowedDomains or Figma will block the connection.
+const WS_BASE_URL = import.meta.env.VITE_FIGMA_BRIDGE_WS || "ws://localhost:1994/ws";
 
 export default function App() {
   const [connected, setConnected] = useState(false);

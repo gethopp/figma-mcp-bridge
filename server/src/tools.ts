@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { lookup } from "node:dns/promises";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import path from "node:path";
 import type { z } from "zod";
@@ -9,6 +9,7 @@ import {
   createFrameInput,
   createImageInput,
   createPageInput,
+  importHtmlLayersInput,
   createShapeShape,
   createTextShape,
   createShapeInput,
@@ -388,6 +389,30 @@ export function registerTools(server: McpServer, node: Node, port: number): void
   );
 
   server.tool(
+    "import_html_layers",
+    "Import a DOM serialization (JSON produced by html-figma's browser htmlToFigma()) as editable Figma layers inside a new wrapper frame — frames, text, rectangles, and SVG vectors in one call. Source must be a JSON file path inside the MCP server working directory. Optionally append the wrapper into an existing frame/section via parentId. Requires the plugin to be open in the design editor. When multiple files are connected, specify fileKey.",
+    importHtmlLayersInput.shape,
+    async ({ source, fileKey, ...params }): Promise<ToolResult> => {
+      try {
+        const layers = await loadLayersJson(source, process.cwd());
+        return await renderResponse(() =>
+          node.sendWithParams("import_html_layers", undefined, { ...params, layers }, fileKey)
+        );
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: err instanceof Error ? err.message : String(err),
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
     "duplicate_nodes",
     "Duplicate one or more nodes in place. The duplicates remain under the same parent as the originals. When multiple files are connected, specify fileKey.",
     toolInputSchemas.duplicate_nodes.shape,
@@ -708,6 +733,62 @@ function resolveAndValidateOutputPath(outputPath: string, workspaceRoot: string)
  * @param workspaceRoot - Root directory for resolving relative local paths.
  * @returns Base64-encoded image bytes.
  */
+const MAX_LAYERS_JSON_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Reads and parses an html-figma layer-tree JSON file from inside the
+ * workspace root. Mirrors the local-path rules of loadImageSourceAsBase64.
+ * @param source - JSON file path (absolute or relative to the workspace root).
+ * @param workspaceRoot - The MCP server working directory.
+ * @returns The parsed layer tree (root LayerNode).
+ */
+async function loadLayersJson(
+  source: string,
+  workspaceRoot: string
+): Promise<Record<string, unknown>> {
+  const resolvedRoot = await realpath(path.resolve(workspaceRoot));
+  const lexicalPath = path.resolve(resolvedRoot, source);
+  // Resolve symlinks before the containment check — a workspace-local symlink
+  // must not be able to point the read outside the working directory.
+  let resolvedPath: string;
+  try {
+    resolvedPath = await realpath(lexicalPath);
+  } catch {
+    throw new Error(`Layers source not found: ${source}`);
+  }
+  const relativePath = path.relative(resolvedRoot, resolvedPath);
+  const escapesRoot = relativePath.startsWith("..") || path.isAbsolute(relativePath);
+  if (escapesRoot) {
+    throw new Error(
+      `layers source must be inside the MCP server working directory: ${resolvedRoot}`
+    );
+  }
+  // Check the size before reading so an oversized file is rejected without
+  // allocating its contents.
+  const info = await stat(resolvedPath);
+  if (!info.isFile()) {
+    throw new Error(`Layers source is not a regular file: ${source}`);
+  }
+  if (info.size > MAX_LAYERS_JSON_BYTES) {
+    throw new Error(`Layers JSON exceeds ${MAX_LAYERS_JSON_BYTES} bytes`);
+  }
+  const bytes = await readFile(resolvedPath);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    throw new Error(`Layers source is not valid JSON: ${source}`);
+  }
+  // htmlToFigma() returns a single root LayerNode; tolerate a one-element array.
+  const root = Array.isArray(parsed) ? parsed[0] : parsed;
+  if (!root || typeof root !== "object" || typeof (root as { type?: unknown }).type !== "string") {
+    throw new Error(
+      "Layers JSON must be an html-figma LayerNode tree (object with a `type` field)"
+    );
+  }
+  return root as Record<string, unknown>;
+}
+
 async function loadImageSourceAsBase64(source: string, workspaceRoot: string): Promise<string> {
   if (/^https?:\/\//i.test(source)) {
     const bytes = await fetchImageBytes(source);

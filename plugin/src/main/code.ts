@@ -1,4 +1,5 @@
 import { serializeNode } from "./serializer";
+import { addLayersToFrame } from "../html-figma/figma";
 
 type RequestType =
   | "get_document"
@@ -23,6 +24,7 @@ type RequestType =
   | "create_text"
   | "create_shape"
   | "create_image"
+  | "import_html_layers"
   | "duplicate_nodes"
   | "reparent_nodes"
   | "group_nodes"
@@ -341,6 +343,7 @@ const EDIT_REQUEST_TYPES = new Set<RequestType>([
   "create_text",
   "create_shape",
   "create_image",
+  "import_html_layers",
   "duplicate_nodes",
   "reparent_nodes",
   "group_nodes",
@@ -1426,6 +1429,115 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
             width: node.width,
             height: node.height,
             imageHash: image.hash,
+          },
+        };
+      }
+      case "import_html_layers": {
+        const params = request.params ?? {};
+        const root = params.layers as
+          { type?: unknown; width?: unknown; height?: unknown } | undefined;
+        if (!root || typeof root !== "object" || typeof root.type !== "string") {
+          throw new Error(
+            "layers (an html-figma LayerNode tree) is required for import_html_layers"
+          );
+        }
+
+        const wrapper = figma.createFrame();
+        wrapper.name =
+          typeof params.name === "string" && params.name.length > 0
+            ? params.name
+            : "imported layers";
+        const rootWidth = typeof root.width === "number" ? root.width : 100;
+        const rootHeight = typeof root.height === "number" ? root.height : 100;
+        wrapper.resize(Math.max(rootWidth, 1), Math.max(rootHeight, 1));
+        wrapper.fills = [];
+        wrapper.clipsContent = true;
+        // Same contract as the create_* tools: when parentId is given the
+        // wrapper is appended into it and x/y are relative to that parent.
+        await appendToParentIfProvided(wrapper, params.parentId);
+        positionNode(wrapper, params.x, params.y);
+
+        // html-figma catches per-layer render errors internally and keeps
+        // going, so a failed layer would otherwise be silent. Count the tree
+        // up front and compare with how many layers actually rendered.
+        const countLayers = (layer: unknown): number => {
+          if (!layer || typeof layer !== "object") return 0;
+          const children = (layer as { children?: unknown }).children;
+          let total = 1;
+          if (Array.isArray(children)) {
+            for (const child of children) total += countLayers(child);
+          }
+          return total;
+        };
+        const expectedLayerCount = countLayers(root);
+
+        let layerCount = 0;
+        const textWeightFixes: Array<{ node: TextNode; weight: number }> = [];
+        // html-figma renderer: walks the tree, creates frames/text/rects/SVG
+        // vectors, matches installed fonts, and resolves image fills.
+        await addLayersToFrame([root as never], wrapper, ({ node, layer }) => {
+          layerCount += 1;
+          const weight = (layer as { fontWeight?: unknown }).fontWeight;
+          if (node.type === "TEXT" && typeof weight === "number" && weight >= 500) {
+            textWeightFixes.push({ node: node as TextNode, weight });
+          }
+        });
+
+        // html-figma's font matcher only ever loads the Regular style, so
+        // restore heavier weights from the serialized numeric fontWeight.
+        // Families missing a style fall back one step lighter per candidate.
+        const styleCandidates = (weight: number): string[] => {
+          if (weight >= 900) return ["Black", "ExtraBold", "Bold"];
+          if (weight >= 800) return ["ExtraBold", "Bold"];
+          if (weight >= 700) return ["Bold", "SemiBold"];
+          if (weight >= 600) return ["SemiBold", "Bold", "Medium"];
+          return ["Medium", "SemiBold"];
+        };
+        for (const { node: textNode, weight } of textWeightFixes) {
+          const current = textNode.fontName;
+          if (current === figma.mixed) continue;
+          const beforeHeight = textNode.height;
+          for (const style of styleCandidates(weight)) {
+            try {
+              const fontName = { family: current.family, style };
+              await figma.loadFontAsync(fontName);
+              textNode.fontName = fontName;
+              break;
+            } catch {
+              // style not available in this family — try the next candidate
+            }
+          }
+          // The renderer width-adjusted this box with the Regular style; the
+          // heavier style is wider, so re-widen until the original line count
+          // (height) is restored.
+          let tries = 0;
+          while (textNode.height > beforeHeight && tries++ < 24) {
+            try {
+              textNode.resize(textNode.width + 1, textNode.height);
+            } catch {
+              break;
+            }
+          }
+        }
+
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: {
+            nodeId: wrapper.id,
+            nodeName: wrapper.name,
+            parentId: wrapper.parent?.id,
+            x: wrapper.x,
+            y: wrapper.y,
+            width: wrapper.width,
+            height: wrapper.height,
+            layerCount,
+            expectedLayerCount,
+            ...(layerCount < expectedLayerCount
+              ? {
+                  warning: `Partial import: ${expectedLayerCount - layerCount} of ${expectedLayerCount} layers failed to render (see the plugin console for per-layer errors). Delete node ${wrapper.id} and retry if completeness matters.`,
+                }
+              : {}),
           },
         };
       }

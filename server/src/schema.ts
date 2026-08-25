@@ -559,6 +559,37 @@ export const createImageInput = z.object({
   fileKey: fileKeyField,
 });
 
+/**
+ * A serialized layer tree produced by html-figma's browser `htmlToFigma()`.
+ * The tree is validated loosely here (root must at least carry a node type);
+ * the plugin-side renderer is the authority on the full shape.
+ */
+const htmlLayerTree = z
+  .object({ type: z.string().min(1) })
+  .passthrough()
+  .describe("Root LayerNode of an html-figma serialization");
+
+export const importHtmlLayersInput = z.object({
+  source: z
+    .string()
+    .min(1)
+    .describe(
+      "Path to a JSON file containing an html-figma htmlToFigma() layer tree, relative to the MCP server cwd (absolute paths must stay inside it)."
+    ),
+  name: z
+    .string()
+    .optional()
+    .describe("Optional name for the wrapper frame (default: 'imported layers')"),
+  parentId: createFigmaNodeIdSchema()
+    .optional()
+    .describe(
+      "Optional parent node ID (frame/section) to append the wrapper frame into. x/y become relative to that parent."
+    ),
+  x: z.number().optional().describe("Optional x position of the wrapper frame"),
+  y: z.number().optional().describe("Optional y position of the wrapper frame"),
+  fileKey: fileKeyField,
+});
+
 export const toolInputSchemas = {
   get_document: z.object({
     fileKey: fileKeyField,
@@ -691,6 +722,8 @@ export const toolInputSchemas = {
   create_shape: createShapeInput,
 
   create_image: createImageInput,
+
+  import_html_layers: importHtmlLayersInput,
 
   duplicate_nodes: z.object({
     nodeIds: z.array(createFigmaNodeIdSchema()).min(1).describe("List of node IDs to duplicate"),
@@ -852,9 +885,21 @@ const createImageRpcInput = createImageInput.omit({ source: true, fileKey: true 
  * payload before forwarding validate their wire shape here; every other tool
  * validates against its advertised MCP input schema.
  */
+/**
+ * Wire-format schema for import_html_layers on the follower→leader RPC path.
+ * Mirrors createImageRpcInput: the tool handler resolves `source` (JSON file
+ * path) into the parsed `layers` tree before forwarding.
+ */
+const importHtmlLayersRpcInput = importHtmlLayersInput
+  .omit({ source: true, fileKey: true })
+  .extend({
+    layers: htmlLayerTree,
+  });
+
 const rpcInputSchemas = {
   ...toolInputSchemas,
   create_image: createImageRpcInput,
+  import_html_layers: importHtmlLayersRpcInput,
 } as const;
 
 /**
@@ -897,6 +942,7 @@ const rpcToArgs: Record<
   create_text: (_nodeIds, params) => ({ ...params }),
   create_shape: (_nodeIds, params) => ({ ...params }),
   create_image: (_nodeIds, params) => ({ ...params }),
+  import_html_layers: (_nodeIds, params) => ({ ...params }),
   duplicate_nodes: (nodeIds, params) => ({ nodeIds, ...params }),
   reparent_nodes: (nodeIds, params) => ({ nodeIds, ...params }),
   group_nodes: (nodeIds, params) => ({ nodeIds, ...params }),
@@ -907,26 +953,11 @@ const rpcToArgs: Record<
   save_screenshots: (_nodeIds, params) => ({ ...params }),
   get_motion_styles: (_nodeIds, params) => ({ ...params }),
   get_node_motion: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
-  apply_animation_style: (nodeIds, params) => ({
-    ...params,
-    nodeId: nodeIds?.[0],
-  }),
-  remove_animation_style: (nodeIds, params) => ({
-    ...params,
-    nodeId: nodeIds?.[0],
-  }),
-  apply_manual_keyframe_track: (nodeIds, params) => ({
-    ...params,
-    nodeId: nodeIds?.[0],
-  }),
-  remove_manual_keyframe_track: (nodeIds, params) => ({
-    ...params,
-    nodeId: nodeIds?.[0],
-  }),
-  set_timeline_duration: (nodeIds, params) => ({
-    ...params,
-    nodeId: nodeIds?.[0],
-  }),
+  apply_animation_style: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  remove_animation_style: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  apply_manual_keyframe_track: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  remove_manual_keyframe_track: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  set_timeline_duration: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
 };
 
 /**
