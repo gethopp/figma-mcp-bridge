@@ -95,6 +95,7 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `create_text`                  | Create a new text node                                                                 |
 | `create_shape`                 | Create a rectangle, ellipse, or line                                                   |
 | `create_image`                 | Create an image-backed rectangle from a local path, URL, or data URI                   |
+| `import_html_layers`           | Bulk-import an html-figma layer tree (JSON) as frames, text, rectangles, and vectors   |
 | `duplicate_nodes`              | Duplicate nodes in place                                                               |
 | `reparent_nodes`               | Move nodes into another parent                                                         |
 | `group_nodes`                  | Wrap a list of nodes (sharing a parent) in a new group                                 |
@@ -113,6 +114,7 @@ All tools accept an optional `fileKey` parameter when multiple Figma files are c
 - Text edits automatically load the fonts currently used by the target text node before applying the new content.
 - New text nodes default to `Inter Regular` unless a font is provided.
 - `create_image` reads local paths relative to the MCP server working directory unless you pass an absolute path.
+- `import_html_layers` takes a JSON file produced by [html-figma](https://github.com/sergcen/html-to-figma)'s browser `htmlToFigma()`. The path resolves relative to the MCP server working directory and must stay inside it, even when absolute. Everything lands inside one wrapper frame, and the response reports `layerCount` against `expectedLayerCount` so partial imports are visible.
 - `create_page` returns the new page's ID — pass it as `parentId` to `create_frame` / `create_text` / `create_shape` / `create_image` to author content on that page without switching the editor.
 
 ### What You Can Build

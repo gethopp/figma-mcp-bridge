@@ -1472,53 +1472,12 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
         const expectedLayerCount = countLayers(root);
 
         let layerCount = 0;
-        const textWeightFixes: Array<{ node: TextNode; weight: number }> = [];
         // html-figma renderer: walks the tree, creates frames/text/rects/SVG
-        // vectors, matches installed fonts, and resolves image fills.
-        await addLayersToFrame([root as never], wrapper, ({ node, layer }) => {
+        // vectors, matches installed fonts (including weights carried by the
+        // serialization), and resolves image fills.
+        await addLayersToFrame([root as never], wrapper, () => {
           layerCount += 1;
-          const weight = (layer as { fontWeight?: unknown }).fontWeight;
-          if (node.type === "TEXT" && typeof weight === "number" && weight >= 500) {
-            textWeightFixes.push({ node: node as TextNode, weight });
-          }
         });
-
-        // html-figma's font matcher only ever loads the Regular style, so
-        // restore heavier weights from the serialized numeric fontWeight.
-        // Families missing a style fall back one step lighter per candidate.
-        const styleCandidates = (weight: number): string[] => {
-          if (weight >= 900) return ["Black", "ExtraBold", "Bold"];
-          if (weight >= 800) return ["ExtraBold", "Bold"];
-          if (weight >= 700) return ["Bold", "SemiBold"];
-          if (weight >= 600) return ["SemiBold", "Bold", "Medium"];
-          return ["Medium", "SemiBold"];
-        };
-        for (const { node: textNode, weight } of textWeightFixes) {
-          const current = textNode.fontName;
-          if (current === figma.mixed) continue;
-          const beforeHeight = textNode.height;
-          for (const style of styleCandidates(weight)) {
-            try {
-              const fontName = { family: current.family, style };
-              await figma.loadFontAsync(fontName);
-              textNode.fontName = fontName;
-              break;
-            } catch {
-              // style not available in this family — try the next candidate
-            }
-          }
-          // The renderer width-adjusted this box with the Regular style; the
-          // heavier style is wider, so re-widen until the original line count
-          // (height) is restored.
-          let tries = 0;
-          while (textNode.height > beforeHeight && tries++ < 24) {
-            try {
-              textNode.resize(textNode.width + 1, textNode.height);
-            } catch {
-              break;
-            }
-          }
-        }
 
         return {
           type: request.type,

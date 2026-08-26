@@ -6,42 +6,60 @@ export const defaultFont = { family: "Roboto", style: "Regular" };
 
 let cachedAvailableFonts: Font[] | null = null;
 
-const getAvailableFontNames = async () => {
-  if (cachedAvailableFonts) {
-    return cachedAvailableFonts;
-  } else {
-    return (await figma.listAvailableFontsAsync()).filter(
-      (font: Font) => font.fontName.style === "Regular"
-    );
+const getAvailableFonts = async () => {
+  if (!cachedAvailableFonts) {
+    cachedAvailableFonts = await figma.listAvailableFontsAsync();
   }
+  return cachedAvailableFonts;
+};
+
+/**
+ * Figma addresses weights by style name, and which names a family ships varies,
+ * so each CSS numeric weight maps to an ordered list of candidates ending at
+ * Regular. Without a weight the result is Regular, matching a serialization
+ * that carries no `fontWeight`.
+ */
+const styleCandidates = (fontWeight?: number): string[] => {
+  if (typeof fontWeight !== "number" || fontWeight < 500) return ["Regular"];
+  if (fontWeight >= 900) return ["Black", "ExtraBold", "Bold", "Regular"];
+  if (fontWeight >= 800) return ["ExtraBold", "Bold", "Regular"];
+  if (fontWeight >= 700) return ["Bold", "SemiBold", "Regular"];
+  if (fontWeight >= 600) return ["SemiBold", "Bold", "Medium", "Regular"];
+  return ["Medium", "SemiBold", "Regular"];
 };
 
 // TODO: keep list of fonts not found
-export async function getMatchingFont(fontStr: string) {
-  const cached = fontCache[fontStr];
+export async function getMatchingFont(fontStr: string, fontWeight?: number): Promise<FontName> {
+  const cacheKey = `${fontStr}|${fontWeight ?? ""}`;
+  const cached = fontCache[cacheKey];
   if (cached) {
     return cached;
   }
 
-  const availableFonts = await getAvailableFontNames();
-  const familySplit = fontStr.split(/\s*,\s*/);
+  const availableFonts = await getAvailableFonts();
+  const candidates = styleCandidates(fontWeight);
 
-  for (const family of familySplit) {
+  for (const family of fontStr.split(/\s*,\s*/)) {
     const normalized = normalizeName(family);
-    for (const availableFont of availableFonts) {
-      const normalizedAvailable = normalizeName(availableFont.fontName.family);
-      if (normalizedAvailable === normalized) {
-        const cached = fontCache[normalizedAvailable];
-        if (cached) {
-          return cached;
-        }
-        await figma.loadFontAsync(availableFont.fontName);
-        fontCache[fontStr] = availableFont.fontName;
-        fontCache[normalizedAvailable] = availableFont.fontName;
-        return availableFont.fontName;
+    const familyFonts = availableFonts.filter(
+      (font: Font) => normalizeName(font.fontName.family) === normalized
+    );
+    if (!familyFonts.length) {
+      continue;
+    }
+
+    for (const style of candidates) {
+      const match = familyFonts.find((font: Font) => font.fontName.style === style);
+      if (!match) {
+        continue;
       }
+      await figma.loadFontAsync(match.fontName);
+      fontCache[cacheKey] = match.fontName;
+      return match.fontName;
     }
   }
 
+  await figma.loadFontAsync(defaultFont);
+  fontCache[cacheKey] = defaultFont;
   return defaultFont;
 }

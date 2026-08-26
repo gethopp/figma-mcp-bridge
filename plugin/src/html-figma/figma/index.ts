@@ -1,5 +1,5 @@
 import { LayerNode, PlainLayerNode } from "../types";
-import { traverse, traverseAsync } from "../utils";
+import { traverseAsync } from "../utils";
 import { processLayer } from "./processLayer";
 
 interface LayerCbArgs {
