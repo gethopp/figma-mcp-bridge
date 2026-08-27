@@ -461,6 +461,44 @@ export function registerTools(
   );
 
   server.tool(
+    "create_component_from_node",
+    "Convert an existing frame (or other eligible node) into a real Figma Component, in place — preserves children, position, and size. Use this before combine_as_variants to build a variant set, or standalone for a single reusable component. Throws if the node is already a component/component set or is nested inside one.",
+    toolInputSchemas.create_component_from_node.shape,
+    async ({ nodeId, name, fileKey }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("create_component_from_node", [nodeId], { name }, fileKey)
+      );
+    }
+  );
+
+  server.tool(
+    "combine_as_variants",
+    "Combine two or more existing Components into a single Component Set (Figma's native Variants feature). Each input node must already be a COMPONENT — convert frames first with create_component_from_node. Automatically lays out and resizes the resulting set (raw combineAsVariants output stacks at (0,0), which this tool corrects).",
+    toolInputSchemas.combine_as_variants.shape,
+    async ({ nodeIds, parentId, name, layout, gap, fileKey }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams(
+          "combine_as_variants",
+          nodeIds,
+          { parentId, name, layout, gap },
+          fileKey
+        )
+      );
+    }
+  );
+
+  server.tool(
+    "set_reactions",
+    "Set Figma prototype reactions (interactions) on a node — e.g. on-click navigation to another frame, on-hover states. Replaces ALL existing reactions on the node with the given array (not a delta/append).",
+    toolInputSchemas.set_reactions.shape,
+    async ({ nodeId, reactions, fileKey }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("set_reactions", [nodeId], { reactions }, fileKey)
+      );
+    }
+  );
+
+  server.tool(
     "set_selection",
     "Set the current page selection to a list of node IDs. Pass an empty array to clear the selection. Works in both design editor and Dev Mode.",
     setSelectionInput.shape,

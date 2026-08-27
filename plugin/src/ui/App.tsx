@@ -29,7 +29,10 @@ type RequestType =
   | "ungroup_node"
   | "set_selection"
   | "scroll_and_zoom_into_view"
-  | "delete_nodes";
+  | "delete_nodes"
+  | "create_component_from_node"
+  | "combine_as_variants"
+  | "set_reactions";
 
 type ServerRequest = {
   type: RequestType;

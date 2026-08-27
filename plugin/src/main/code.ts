@@ -35,7 +35,10 @@ type RequestType =
   | "remove_animation_style"
   | "apply_manual_keyframe_track"
   | "remove_manual_keyframe_track"
-  | "set_timeline_duration";
+  | "set_timeline_duration"
+  | "create_component_from_node"
+  | "combine_as_variants"
+  | "set_reactions";
 
 type ServerRequestParams = Record<string, unknown> & {
   format?: "PNG" | "SVG" | "JPG" | "PDF";
@@ -368,6 +371,9 @@ const EDIT_REQUEST_TYPES = new Set<RequestType>([
   "apply_manual_keyframe_track",
   "remove_manual_keyframe_track",
   "set_timeline_duration",
+  "create_component_from_node",
+  "combine_as_variants",
+  "set_reactions",
 ]);
 
 const requireEditorMode = (toolName: RequestType): void => {
@@ -1605,6 +1611,145 @@ const handleRequest = async (
           data: {
             parentId,
             orphanIds: orphans.map((o) => o.id),
+          },
+        };
+      }
+      case "create_component_from_node": {
+        const nodeId = request.nodeIds && request.nodeIds[0];
+        if (!nodeId) {
+          throw new Error(
+            "nodeIds is required for create_component_from_node"
+          );
+        }
+
+        const node = await getSceneNodeById(nodeId);
+        if (node.type === "COMPONENT" || node.type === "COMPONENT_SET") {
+          throw new Error(`Node is already a ${node.type}: ${nodeId}`);
+        }
+
+        const component = figma.createComponentFromNode(node);
+        const name = request.params?.name;
+        if (typeof name === "string") {
+          component.name = name;
+        }
+
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: {
+            nodeId: component.id,
+            nodeName: component.name,
+            parentId: component.parent?.id,
+            x: component.x,
+            y: component.y,
+            width: component.width,
+            height: component.height,
+          },
+        };
+      }
+      case "combine_as_variants": {
+        if (!request.nodeIds || request.nodeIds.length < 2) {
+          throw new Error(
+            "At least 2 nodeIds are required for combine_as_variants"
+          );
+        }
+
+        const components = await Promise.all(
+          request.nodeIds.map((nodeId) => getSceneNodeById(nodeId))
+        );
+        for (const c of components) {
+          if (c.type !== "COMPONENT") {
+            throw new Error(
+              `combine_as_variants requires COMPONENT nodes; got ${c.type} for ${c.id}. Convert with create_component_from_node first.`
+            );
+          }
+        }
+
+        const explicitParentId = request.params?.parentId;
+        const parent =
+          typeof explicitParentId === "string"
+            ? await getParentNodeById(explicitParentId)
+            : figma.currentPage;
+
+        const set = figma.combineAsVariants(
+          components as ComponentNode[],
+          parent
+        );
+
+        const name = request.params?.name;
+        if (typeof name === "string") {
+          set.name = name;
+        }
+
+        // combineAsVariants stacks all children at (0,0) — lay them out and
+        // resize the set from actual child bounds, as Figma requires.
+        const layout = request.params?.layout === "COLUMN" ? "COLUMN" : "ROW";
+        const gap =
+          typeof request.params?.gap === "number" ? request.params.gap : 100;
+
+        let cursor = 0;
+        let maxCross = 0;
+        for (const child of set.children) {
+          if (layout === "ROW") {
+            child.x = cursor;
+            child.y = 0;
+            cursor += child.width + gap;
+            maxCross = Math.max(maxCross, child.height);
+          } else {
+            child.x = 0;
+            child.y = cursor;
+            cursor += child.height + gap;
+            maxCross = Math.max(maxCross, child.width);
+          }
+        }
+        cursor = Math.max(cursor - gap, 0);
+
+        const setWidth = layout === "ROW" ? cursor + 40 : maxCross + 40;
+        const setHeight = layout === "ROW" ? maxCross + 40 : cursor + 40;
+        set.resizeWithoutConstraints(Math.max(setWidth, 1), Math.max(setHeight, 1));
+
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: {
+            componentSetId: set.id,
+            nodeName: set.name,
+            parentId: set.parent?.id,
+            variantIds: set.children.map((c) => c.id),
+            x: set.x,
+            y: set.y,
+            width: set.width,
+            height: set.height,
+          },
+        };
+      }
+      case "set_reactions": {
+        const nodeId = request.nodeIds && request.nodeIds[0];
+        if (!nodeId) {
+          throw new Error("nodeIds is required for set_reactions");
+        }
+        const reactions = request.params?.reactions;
+        if (!Array.isArray(reactions)) {
+          throw new Error(
+            "params.reactions (array) is required for set_reactions"
+          );
+        }
+
+        const node = await getSceneNodeById(nodeId);
+        if (!("setReactionsAsync" in node)) {
+          throw new Error(`Node does not support reactions: ${nodeId}`);
+        }
+        const target = node as SceneNode & {
+          setReactionsAsync: (reactions: unknown[]) => Promise<void>;
+        };
+        await target.setReactionsAsync(reactions);
+
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: {
+            nodeId: node.id,
+            reactionCount: reactions.length,
           },
         };
       }
