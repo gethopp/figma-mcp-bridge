@@ -8,6 +8,7 @@
   --dot-connected: #17b26a;
   --dot-disconnected: #f04438;
   --text-white: #ffffff;
+  --toggle-hover: rgba(255, 255, 255, 0.1);
 }
 
 * {
@@ -28,17 +29,71 @@ body {
 }
 
 .container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0 38px 0 14px;
+}
+
+.collapse-toggle {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-label);
+  cursor: pointer;
+}
+
+.collapse-toggle:hover {
+  background: var(--toggle-hover);
+  color: var(--text-value);
+}
+
+.collapse-toggle svg {
+  transition: transform 120ms ease;
+}
+
+.container.collapsed .collapse-toggle svg {
+  transform: rotate(180deg);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
   padding: 14px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  height: 100vh;
+}
+
+.container.collapsed .body {
+  display: none;
 }
 
 .info-section {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Keeps a long file name clear of the floating toggle. */
+  padding-right: 26px;
 }
 
 .info-row {

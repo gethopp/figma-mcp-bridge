@@ -1847,7 +1847,39 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
   }
 };
 
-figma.showUI(__html__, { width: 320, height: 180 });
+const UI_WIDTH = 320;
+const UI_EXPANDED_HEIGHT = 180;
+/** Just the status bar: the collapsed ("minimized") window. */
+const UI_COLLAPSED_HEIGHT = 36;
+const UI_COLLAPSED_KEY = "ui-collapsed";
+
+let uiCollapsed = false;
+
+const applyUiSize = () => {
+  figma.ui.resize(UI_WIDTH, uiCollapsed ? UI_COLLAPSED_HEIGHT : UI_EXPANDED_HEIGHT);
+};
+
+const postUiCollapseState = () => {
+  figma.ui.postMessage({ type: "ui-collapse-state", payload: { collapsed: uiCollapsed } });
+};
+
+// Start hidden so the window never flashes at full height before the stored
+// collapsed state is restored. The iframe still loads and runs while hidden.
+figma.showUI(__html__, { width: UI_WIDTH, height: UI_EXPANDED_HEIGHT, visible: false });
+
+figma.clientStorage
+  .getAsync(UI_COLLAPSED_KEY)
+  .then((stored) => {
+    uiCollapsed = stored === true;
+  })
+  .catch(() => {
+    uiCollapsed = false;
+  })
+  .then(() => {
+    applyUiSize();
+    postUiCollapseState();
+    figma.ui.show();
+  });
 sendStatus();
 
 figma.on("selectionchange", () => {
@@ -1857,6 +1889,20 @@ figma.on("selectionchange", () => {
 figma.ui.onmessage = async (message) => {
   if (message.type === "ui-ready") {
     sendStatus();
+    return;
+  }
+
+  if (message.type === "request-ui-state") {
+    postUiCollapseState();
+    return;
+  }
+
+  if (message.type === "set-ui-collapsed") {
+    uiCollapsed = message.collapsed === true;
+    applyUiSize();
+    figma.clientStorage.setAsync(UI_COLLAPSED_KEY, uiCollapsed).catch(() => {
+      // Persisting the preference is best-effort; the window is already resized.
+    });
     return;
   }
 
