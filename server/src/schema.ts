@@ -859,6 +859,57 @@ export const toolInputSchemas = {
       .describe("The new timeline duration in seconds (must be greater than zero)"),
     fileKey: fileKeyField,
   }),
+
+  create_component_from_node: z.object({
+    nodeId: createFigmaNodeIdSchema().describe(
+      "Frame (or other eligible node) to convert into a Component, in place. The node must not already be a component/component set and must not be nested inside one."
+    ),
+    name: z
+      .string()
+      .optional()
+      .describe(
+        "Optional new name for the component. Use this to encode a variant property before combine_as_variants, e.g. 'State=Public'."
+      ),
+    fileKey: fileKeyField,
+  }),
+
+  combine_as_variants: z.object({
+    nodeIds: z
+      .array(createFigmaNodeIdSchema())
+      .min(2)
+      .describe(
+        "Component node IDs to combine into one Component Set. Each must already be type COMPONENT (use create_component_from_node first). Each component's current name should encode its variant property, e.g. 'State=Public' / 'State=Admin'."
+      ),
+    parentId: createFigmaNodeIdSchema()
+      .optional()
+      .describe(
+        "Optional explicit parent for the new Component Set. Defaults to the current page."
+      ),
+    name: z
+      .string()
+      .optional()
+      .describe("Optional name for the resulting Component Set, e.g. 'Landing'."),
+    layout: z
+      .enum(["ROW", "COLUMN"])
+      .optional()
+      .describe(
+        "How to arrange the variants after combining — Figma stacks them at (0,0) by default and this tool lays them out automatically. Defaults to ROW."
+      ),
+    gap: z.number().optional().describe("Gap in pixels between variants. Defaults to 100."),
+    fileKey: fileKeyField,
+  }),
+
+  set_reactions: z.object({
+    nodeId: createFigmaNodeIdSchema().describe(
+      "Node to attach prototype reactions to (e.g. a button, link, or card)."
+    ),
+    reactions: z
+      .array(z.record(z.unknown()))
+      .describe(
+        "Full array of Figma Reaction objects to set on the node — this REPLACES all existing reactions, it is not a delta. Shape: [{ trigger: { type: 'ON_CLICK' | 'ON_HOVER' | ... }, actions: [{ type: 'NODE', destinationId: '<nodeId>', navigation: 'NAVIGATE' | 'CHANGE_TO' | ..., transition: null | {...} }] }]."
+      ),
+    fileKey: fileKeyField,
+  }),
 } as const;
 
 type ToolName = keyof typeof toolInputSchemas;
@@ -958,6 +1009,12 @@ const rpcToArgs: Record<
   apply_manual_keyframe_track: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   remove_manual_keyframe_track: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   set_timeline_duration: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  create_component_from_node: (nodeIds, params) => ({
+    ...params,
+    nodeId: nodeIds?.[0],
+  }),
+  combine_as_variants: (nodeIds, params) => ({ nodeIds, ...params }),
+  set_reactions: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
 };
 
 /**
