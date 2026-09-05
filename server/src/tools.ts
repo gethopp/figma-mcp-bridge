@@ -137,6 +137,14 @@ export function registerTools(server: McpServer, node: Node, port: number): void
   );
 
   server.tool(
+    "get_layout_tree",
+    "Read absolute node transforms and layout bounds for a capture root. Separate screenshot calls are non-atomic.",
+    toolInputSchemas.get_layout_tree.shape,
+    async ({ rootId, maxNodes, fileKey }): Promise<ToolResult> =>
+      renderResponse(() => node.sendWithParams("get_layout_tree", [rootId], { maxNodes }, fileKey))
+  );
+
+  server.tool(
     "get_node",
     "Get a specific Figma node by ID. Accepts top-level IDs like '4029:12345' and instance-child IDs like 'I12740:17806;12740:17793'. Never use hyphens. When multiple files are connected, specify fileKey.",
     toolInputSchemas.get_node.shape,

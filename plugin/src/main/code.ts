@@ -1,3 +1,4 @@
+import { getLayoutTree } from "./layout";
 import { serializeNode } from "./serializer";
 import { addLayersToFrame } from "../html-figma/figma";
 
@@ -5,6 +6,7 @@ type RequestType =
   | "get_document"
   | "get_selection"
   | "get_node"
+  | "get_layout_tree"
   | "get_styles"
   | "get_metadata"
   | "get_design_context"
@@ -384,6 +386,15 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           requestId: request.requestId,
           data: figma.currentPage.selection.map((node) => serializeNode(node)),
         };
+      case "get_layout_tree": {
+        const rootId = request.nodeIds?.[0];
+        if (!rootId) throw new Error("rootId is required");
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await getLayoutTree(rootId, Number(request.params?.maxNodes ?? 2000)),
+        };
+      }
       case "get_node": {
         const nodeId = request.nodeIds && request.nodeIds[0];
         if (!nodeId) {
