@@ -599,6 +599,12 @@ export const toolInputSchemas = {
     fileKey: fileKeyField,
   }),
 
+  get_layout_tree: z.object({
+    rootId: createFigmaNodeIdSchema(),
+    maxNodes: z.number().int().min(1).max(10000).optional(),
+    fileKey: fileKeyField,
+  }),
+
   get_node: z.object({
     nodeId: createFigmaNodeIdSchema().describe(
       "The node ID to fetch. Accepts top-level IDs like '4029:12345' and instance-child IDs like 'I12740:17806;12740:17793'."
@@ -913,6 +919,7 @@ const rpcToArgs: Record<
 > = {
   get_document: (_nodeIds, params) => ({ ...params }),
   get_selection: (_nodeIds, params) => ({ ...params }),
+  get_layout_tree: (nodeIds, params) => ({ ...params, rootId: nodeIds?.[0] }),
   get_node: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   get_styles: (_nodeIds, params) => ({ ...params }),
   get_metadata: (_nodeIds, params) => ({ ...params }),

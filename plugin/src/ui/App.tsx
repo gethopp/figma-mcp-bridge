@@ -5,6 +5,7 @@ type RequestType =
   | "get_document"
   | "get_selection"
   | "get_node"
+  | "get_layout_tree"
   | "get_styles"
   | "get_metadata"
   | "get_design_context"
