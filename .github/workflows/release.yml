@@ -7,6 +7,11 @@ on:
         description: "Version (semantic, e.g., 1.0.0)"
         required: true
         type: string
+      publish_npm:
+        description: "Also publish the server package to npm (needs npm trusted publishing or NODE_AUTH_TOKEN)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -32,20 +37,19 @@ jobs:
           node-version-file: ".nvmrc"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      # ── Server: install, build, publish ──────────────────────────────
+      # ── Server: install, build, test, publish ────────────────────────
 
       - name: Install server dependencies
         working-directory: server
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Transpile server (tsc)
         working-directory: server
-        run: bun run build
+        run: npm run build
+
+      - name: Test server
+        working-directory: server
+        run: npm test
 
       - name: Verify CLI entry point
         working-directory: server
@@ -63,6 +67,7 @@ jobs:
         run: npm version ${{ inputs.version }} --no-git-tag-version
 
       - name: Publish to npm (with provenance)
+        if: ${{ inputs.publish_npm }}
         working-directory: server
         run: npm publish --access public --provenance
         # env:
@@ -72,25 +77,29 @@ jobs:
 
       - name: Install plugin dependencies
         working-directory: plugin
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Build Figma plugin
         working-directory: plugin
-        run: bun run build
+        run: npm run build
 
       # ── Package GitHub release ───────────────────────────────────────
 
       - name: Package release
         run: |
-          mkdir -p release/plugin
+          mkdir -p release/plugin release/server
 
           # Copy built Figma plugin
           cp -r plugin/dist release/plugin/
           cp plugin/manifest.json release/plugin/
 
+          # Copy built server so it can run without npm: node server/dist/index.js
+          cp -r server/dist server/package.json server/package-lock.json release/server/
+
           # Copy other repo files
           cp README.md release/
           cp LICENSE.md release/
+          cp -r docs release/
 
           # Create zip
           cd release

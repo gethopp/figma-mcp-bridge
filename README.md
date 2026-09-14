@@ -25,6 +25,17 @@ It supports **multiple Figma files connected simultaneously**; open the plugin i
 
 It also includes a small, opt-in set of **write tools** for safe agent-driven edits — see [Editing Notes](#editing-notes) below.
 
+## magentawood fork: design-system extraction
+
+This fork adds read-only tools and a CLI that export a complete design system from **any** Figma file, with no naming conventions assumed: design tokens (raw Figma data and W3C DTCG), a component inventory, vector assets, full layer trees with the variables and styles each layer uses, frame screenshots and image fills. It also makes large files reliable: page reads no longer time out, text styling is resolved per run instead of `"mixed"`, and requests to the plugin run one at a time.
+
+- **Plugin:** build it (`cd plugin && npm install && npm run build`), then import `plugin/manifest.json` in Figma. It appears as **Figma MCP Bridge (magentawood)**.
+- **Port 1995** by default, so it never mixes with a stock bridge on 1994. Override with `FIGMA_BRIDGE_PORT`, and rebuild the plugin with `VITE_FIGMA_BRIDGE_WS` (and update `networkAccess` in the manifest) to match.
+- **MCP server:** `cd server && npm install && npm run build`, then register it, e.g. `claude mcp add figma-ds -- node /path/to/figma-mcp-bridge/server/dist/index.js`.
+- **New tools:** `get_bridge_info`, `get_page_summary`, `get_component_set`, `get_component_inventory`, `get_tokens`, `export_subtree`, `find_assets`, `export_assets`, `export_file`. Existing read tools now include bound variable names, shared styles and instance → component links.
+- **CLI:** `node server/dist/index.js export --out ./figma-export --pages "Colors,Icons"` exports without an MCP client; run with `--help` for options.
+- **Output format:** [docs/export-format.md](docs/export-format.md).
+
 ## Demo
 
 [Watch a demo of building a UI in Cursor with Figma MCP Bridge](https://youtu.be/ouygIhFBx0g)

@@ -1,12 +1,12 @@
 {
-  "name": "Figma MCP Bridge",
-  "id": "figma-mcp-bridge",
+  "name": "Figma MCP Bridge (magentawood)",
+  "id": "figma-mcp-bridge-magentawood",
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/index.html",
   "permissions": [],
   "networkAccess": {
-    "allowedDomains": ["ws://localhost:1994"],
+    "allowedDomains": ["ws://localhost:1995"],
     "reasoning": "Connects to local MCP server via WebSocket to stream Figma document data to AI tools"
   },
   "documentAccess": "dynamic-page",

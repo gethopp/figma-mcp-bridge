@@ -33,6 +33,12 @@ import {
 } from "./schema.js";
 import type { BridgeResponse } from "./types.js";
 import { Follower } from "./follower.js";
+import { request } from "./extract/client.js";
+import { countTokens, toDtcg, type RawTokens } from "./extract/dtcg.js";
+import { DEFAULT_EXPORT_OPTIONS, exportFile } from "./extract/exporter.js";
+import { displayName, isSeparatorPage, matchKey, slugify, uniqueName } from "./extract/names.js";
+import { extractionSchemas } from "./extract/schemas.js";
+import { exportTree, walkTree } from "./extract/tree.js";
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 15_000;
@@ -600,6 +606,307 @@ export function registerTools(server: McpServer, node: Node, port: number): void
           ],
           isError: true,
         };
+      }
+    }
+  );
+  // ---- Design-system extraction ----
+
+  const jsonResult = (value: unknown): ToolResult => ({
+    content: [{ type: "text", text: JSON.stringify(value) }],
+  });
+  const errorResult = (err: unknown): ToolResult => ({
+    content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
+    isError: true,
+  });
+  const writeJson = async (outputPath: string, value: unknown): Promise<string> => {
+    const target = resolveAndValidateOutputPath(outputPath, process.cwd());
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, `${JSON.stringify(value, null, 1)}\n`);
+    return target;
+  };
+
+  server.tool(
+    "get_bridge_info",
+    "Report which design-system extraction features the connected Figma plugin supports. Call this first if an extraction tool reports an unknown request type: the plugin in Figma is older than this server.",
+    extractionSchemas.get_bridge_info.shape,
+    async ({ fileKey }): Promise<ToolResult> =>
+      renderResponse(() => node.send("get_bridge_info", undefined, fileKey))
+  );
+
+  server.tool(
+    "get_page_summary",
+    "Summarise any page without serialising its layers: top-level frames, every component set (property definitions, optionally all variants) and standalone component with where it sits, and optionally instance counts per component. Use it to map a design system page by page, whichever page is open in Figma.",
+    extractionSchemas.get_page_summary.shape,
+    async ({ pageId, includeVariants, includeUsage, fileKey }): Promise<ToolResult> =>
+      renderResponse(() =>
+        node.sendWithParams(
+          "get_page_summary",
+          pageId ? [pageId] : undefined,
+          { includeVariants, includeUsage },
+          fileKey
+        )
+      )
+  );
+
+  server.tool(
+    "get_component_set",
+    "Get a component set or component: property definitions (variant, boolean, text, instance swap with defaults and options), description, documentation links, key, and every variant with its property values.",
+    extractionSchemas.get_component_set.shape,
+    async ({ nodeId, fileKey }): Promise<ToolResult> =>
+      renderResponse(() => node.send("get_component_set", [nodeId], fileKey))
+  );
+
+  server.tool(
+    "get_component_inventory",
+    "List every component set and component across the file (or the given pages) with variant counts and property options. For large design systems pass outputPath to write the full inventory, including every variant, to disk and get a short summary back.",
+    extractionSchemas.get_component_inventory.shape,
+    async ({ pages, includeUsage, outputPath, fileKey }): Promise<ToolResult> => {
+      try {
+        const meta = await request<{ fileName: string; pages: { id: string; name: string }[] }>(
+          node,
+          "get_metadata",
+          { fileKey }
+        );
+        const content = meta.pages.filter((page) => !isSeparatorPage(page.name));
+        const selected = pages?.length
+          ? content.filter((page) =>
+              pages.some((key) => page.id === key || matchKey(page.name) === matchKey(key))
+            )
+          : content;
+        const full: Record<string, unknown>[] = [];
+        const summary: Record<string, unknown>[] = [];
+        let sets = 0;
+        let components = 0;
+        for (const page of selected) {
+          const result = await request<{
+            componentSets: Record<string, any>[];
+            components: Record<string, any>[];
+            usage?: unknown;
+          }>(node, "get_page_summary", {
+            nodeIds: [page.id],
+            params: { includeVariants: Boolean(outputPath), includeUsage: includeUsage === true },
+            fileKey,
+          });
+          if (!result.componentSets.length && !result.components.length) continue;
+          sets += result.componentSets.length;
+          components += result.components.length;
+          full.push({ id: page.id, name: displayName(page.name), ...result });
+          summary.push({
+            page: displayName(page.name),
+            pageId: page.id,
+            componentSets: result.componentSets.map((set) => ({
+              id: set.id,
+              name: set.name,
+              variants: set.variantCount,
+              properties: Object.fromEntries(
+                Object.entries((set.propertyDefinitions ?? {}) as Record<string, any>).map(
+                  ([name, def]) => [
+                    name.replace(/#\d+:\d+$/, ""),
+                    def.type === "VARIANT" ? def.variantOptions : def.type,
+                  ]
+                )
+              ),
+            })),
+            components: result.components.map((component) => ({
+              id: component.id,
+              name: component.name,
+            })),
+            usage: result.usage,
+          });
+        }
+        if (outputPath) {
+          const written = await writeJson(outputPath, { file: meta.fileName, pages: full });
+          return jsonResult({
+            file: meta.fileName,
+            written,
+            pages: full.length,
+            componentSets: sets,
+            components,
+          });
+        }
+        return jsonResult({ file: meta.fileName, componentSets: sets, components, pages: summary });
+      } catch (err) {
+        return errorResult(err);
+      }
+    }
+  );
+
+  server.tool(
+    "get_tokens",
+    "Get the file's design tokens: variable collections with modes, aliases, scopes and code syntax, library variables they alias, and every paint, text, effect and grid style with bound variables. Returns a summary by default; format raw or dtcg (W3C Design Tokens) returns or writes the full data.",
+    extractionSchemas.get_tokens.shape,
+    async ({ format, includeLibraries, outputPath, fileKey }): Promise<ToolResult> => {
+      try {
+        const raw = await request<RawTokens>(node, "get_tokens", {
+          params: { includeLibraries: includeLibraries !== false },
+          fileKey,
+        });
+        const mode = format ?? (outputPath ? "dtcg" : "summary");
+        if (mode === "summary") {
+          return jsonResult({
+            collections: [...raw.collections, ...(raw.libraryCollections ?? [])].map(
+              (collection) => ({
+                name: collection.name,
+                remote: collection.remote || undefined,
+                modes: collection.modes.map((m) => m.name),
+                variables: collection.variables.length,
+              })
+            ),
+            styles: {
+              paints: raw.styles?.paints?.length ?? 0,
+              text: raw.styles?.text?.length ?? 0,
+              effects: raw.styles?.effects?.length ?? 0,
+              grids: raw.styles?.grids?.length ?? 0,
+            },
+            next: "Call again with format raw or dtcg, and outputPath for large files.",
+          });
+        }
+        const data = mode === "dtcg" ? toDtcg(raw) : raw;
+        if (outputPath) {
+          const written = await writeJson(outputPath, data);
+          return jsonResult({
+            written,
+            format: mode,
+            tokens: mode === "dtcg" ? countTokens(data) : undefined,
+          });
+        }
+        return jsonResult(data);
+      } catch (err) {
+        return errorResult(err);
+      }
+    }
+  );
+
+  server.tool(
+    "export_subtree",
+    "Read a node or page as a fully described layer tree: styles, layout (sizing, min/max, grid), text with per-run styling, bound variable names, shared styles, instance → main component links with overrides, component property definitions, reactions and annotations. Without outputPath returns one bounded chunk (unreached nodes come back with stub: true — call again with their id); with outputPath fetches everything and writes it to disk.",
+    extractionSchemas.export_subtree.shape,
+    async ({ nodeId, outputPath, maxNodes, includeHidden, fileKey }): Promise<ToolResult> => {
+      const params = { maxNodes, includeHidden };
+      if (!outputPath) {
+        return renderResponse(() =>
+          node.sendWithParams("export_subtree", nodeId ? [nodeId] : undefined, params, fileKey)
+        );
+      }
+      try {
+        let requests = 0;
+        const tree = await exportTree(node, nodeId, fileKey, params, () => requests++);
+        const written = await writeJson(outputPath, tree);
+        let nodes = 0;
+        walkTree(tree, () => nodes++);
+        return jsonResult({ written, nodes, requests });
+      } catch (err) {
+        return errorResult(err);
+      }
+    }
+  );
+
+  server.tool(
+    "find_assets",
+    "Find icons, logos and other vector artwork in a page or node, with no naming assumptions: nodes of the given types whose visible content is only vector shapes (no text; images only if allowed) within maxSize, plus nodes with export settings. Paginated: pass nextCursor back as cursor.",
+    extractionSchemas.find_assets.shape,
+    async ({
+      scopeId,
+      types,
+      maxSize,
+      includeImages,
+      includeExportSettings,
+      cursor,
+      limit,
+      fileKey,
+    }): Promise<ToolResult> =>
+      renderResponse(() =>
+        node.sendWithParams(
+          "find_assets",
+          scopeId ? [scopeId] : undefined,
+          { types, maxSize, includeImages, includeExportSettings, cursor, limit },
+          fileKey
+        )
+      )
+  );
+
+  server.tool(
+    "export_assets",
+    "Export nodes (e.g. from find_assets) as SVG, PNG, JPG or PDF files into a directory. SVG text is outlined so icons render identically everywhere.",
+    extractionSchemas.export_assets.shape,
+    async ({ nodeIds, outputDir, format, scale, fileKey }): Promise<ToolResult> => {
+      try {
+        const dir = resolveAndValidateOutputPath(outputDir, process.cwd());
+        const exportFormat = format ?? "SVG";
+        const result = await request<{ exports: Record<string, any>[] }>(node, "export_assets", {
+          nodeIds,
+          params: { format: exportFormat, scale },
+          fileKey,
+        });
+        await mkdir(dir, { recursive: true });
+        const taken = new Set<string>();
+        const files: Record<string, unknown>[] = [];
+        for (const item of result.exports) {
+          if (item.error) {
+            files.push({ id: item.id, name: item.name, error: item.error });
+            continue;
+          }
+          const file = path.join(
+            dir,
+            `${uniqueName(taken, slugify(item.name ?? item.id))}.${exportFormat.toLowerCase()}`
+          );
+          await writeFile(
+            file,
+            exportFormat === "SVG" ? item.svg : Buffer.from(item.base64, "base64")
+          );
+          files.push({ id: item.id, name: item.name, file });
+        }
+        return jsonResult({ format: exportFormat, files });
+      } catch (err) {
+        return errorResult(err);
+      }
+    }
+  );
+
+  server.tool(
+    "export_file",
+    "Export the Figma file (or given pages) to a directory: design tokens (raw + W3C DTCG), component inventory, vector assets, full layer trees, frame screenshots with tiles and image fills, plus index.md describing everything. Returns a short summary; read index.md first. For very large files prefer the CLI: figma-mcp-bridge export --help.",
+    extractionSchemas.export_file.shape,
+    async ({
+      outputDir,
+      pages,
+      sections,
+      scale,
+      assetTypes,
+      assetMaxSize,
+      assetFormats,
+      componentUsage,
+      fileKey,
+    }): Promise<ToolResult> => {
+      try {
+        const outDir = resolveAndValidateOutputPath(outputDir, process.cwd());
+        const log: string[] = [];
+        const manifest = await exportFile(node, {
+          ...DEFAULT_EXPORT_OPTIONS,
+          outDir,
+          fileKey,
+          pages,
+          sections: sections ?? DEFAULT_EXPORT_OPTIONS.sections,
+          scale: scale ?? DEFAULT_EXPORT_OPTIONS.scale,
+          assetTypes: assetTypes ?? DEFAULT_EXPORT_OPTIONS.assetTypes,
+          assetMaxSize: assetMaxSize ?? DEFAULT_EXPORT_OPTIONS.assetMaxSize,
+          assetFormats: assetFormats ?? DEFAULT_EXPORT_OPTIONS.assetFormats,
+          componentUsage: componentUsage === true,
+          log: (line) => log.push(line),
+        });
+        return jsonResult({
+          index: path.join(outDir, "index.md"),
+          file: manifest.file,
+          pages: manifest.pages.length,
+          tokens: manifest.tokens?.dtcgTokens,
+          componentSets: manifest.components?.sets,
+          assets: manifest.assets?.count,
+          missingPages: manifest.missingPages,
+          errors: manifest.errors,
+          log,
+        });
+      } catch (err) {
+        return errorResult(err);
       }
     }
   );

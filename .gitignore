@@ -175,6 +175,7 @@ binaries/
 
 # Server build output
 server/dist/
+server/dist-test/
 
 # Editor/IDE
 .idea/

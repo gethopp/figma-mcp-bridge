@@ -346,6 +346,19 @@ const serializeStyles = (node: SceneNode): SerializedStyles => {
   return styles;
 };
 
+export {
+  isMixed,
+  toHex,
+  serializePaints,
+  serializeEffects,
+  serializeLineHeight,
+  serializeLetterSpacing,
+  getBounds,
+  serializeText,
+  serializeStyles,
+};
+export type { SerializedNode, SerializedPaint };
+
 export const serializeNode = (node: SceneNode): SerializedNode => {
   const base: SerializedNode = {
     id: node.id,

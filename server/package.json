@@ -1,7 +1,7 @@
 {
-  "name": "@gethopp/figma-mcp-bridge",
-  "version": "0.1.1",
-  "description": "MCP server that bridges Figma plugin data to AI tools without hitting API rate limits",
+  "name": "@magentawood/figma-mcp-bridge",
+  "version": "0.2.0",
+  "description": "MCP server and CLI that bridge a Figma plugin to AI tools and export complete design systems (tokens, components, assets, layers) without API rate limits",
   "type": "module",
   "bin": {
     "figma-mcp-bridge": "dist/index.js"
@@ -12,32 +12,38 @@
   ],
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "bun run build",
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/*.test.js\""
   },
   "keywords": [
     "figma",
     "mcp",
     "model-context-protocol",
     "ai",
-    "design"
+    "design",
+    "design-system",
+    "design-tokens",
+    "dtcg"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gethopp/figma-mcp-bridge.git",
+    "url": "git+https://github.com/magentawood/figma-mcp-bridge.git",
     "directory": "server"
   },
-  "homepage": "https://github.com/gethopp/figma-mcp-bridge#readme",
+  "homepage": "https://github.com/magentawood/figma-mcp-bridge#readme",
   "bugs": {
-    "url": "https://github.com/gethopp/figma-mcp-bridge/issues"
+    "url": "https://github.com/magentawood/figma-mcp-bridge/issues"
   },
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "pngjs": "^7.0.0",
     "ws": "^8.18.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pngjs": "^6.0.5",
     "@types/ws": "^8.5.0",
     "typescript": "^5.6.0"
   },

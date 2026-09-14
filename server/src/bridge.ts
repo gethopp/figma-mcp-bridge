@@ -21,6 +21,7 @@ export class Bridge {
   private wss: WebSocketServer;
   private connections = new Map<string, ConnectionEntry>();
   private pending = new Map<string, PendingRequest>();
+  private queues = new WeakMap<WebSocket, Promise<void>>();
   private counter = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -179,15 +180,33 @@ export class Bridge {
     params?: Record<string, unknown>,
     fileKey?: string
   ): Promise<BridgeResponse> {
-    return new Promise((resolve, reject) => {
-      let conn: WebSocket;
-      try {
-        conn = this.resolveConnection(fileKey);
-      } catch (err) {
-        reject(err);
-        return;
-      }
+    let conn: WebSocket;
+    try {
+      conn = this.resolveConnection(fileKey);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+    // The plugin runs requests on Figma's single main thread; overlapping heavy reads make it stop
+    // answering pings. Queue requests per connection so each file handles one at a time.
+    const previous = this.queues.get(conn) ?? Promise.resolve();
+    const next = previous.then(() => this.dispatch(conn, requestType, nodeIds, params));
+    this.queues.set(
+      conn,
+      next.then(
+        () => undefined,
+        () => undefined
+      )
+    );
+    return next;
+  }
 
+  private dispatch(
+    conn: WebSocket,
+    requestType: string,
+    nodeIds?: string[],
+    params?: Record<string, unknown>
+  ): Promise<BridgeResponse> {
+    return new Promise((resolve, reject) => {
       if (conn.readyState !== WebSocket.OPEN) {
         reject(new Error("Plugin not connected"));
         return;

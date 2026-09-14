@@ -13,7 +13,7 @@ import { VERSION } from "./version.js";
 // plugin manifest's networkAccess.allowedDomains).
 function resolvePort(): number {
   const raw = process.env.FIGMA_BRIDGE_PORT;
-  if (raw === undefined) return 1994;
+  if (raw === undefined) return 1995;
   const port = Number(raw.trim());
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     // An explicitly set but invalid value must not silently join the stock
@@ -26,6 +26,12 @@ function resolvePort(): number {
 const PORT = resolvePort();
 
 async function main(): Promise<void> {
+  // `figma-mcp-bridge export …` runs the file exporter instead of the MCP server.
+  if (process.argv[2] === "export") {
+    const { runExportCli } = await import("./cli.js");
+    process.exit(await runExportCli(process.argv.slice(3), PORT));
+  }
+
   const node = new Node(PORT);
   const election = new Election(PORT, node);
   await election.start();

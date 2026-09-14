@@ -1,6 +1,21 @@
 import { serializeNode } from "./serializer";
 import { addLayersToFrame } from "../html-figma/figma";
 
+import {
+  exportAssets,
+  exportImageFills,
+  findAssets,
+  type AssetExportFormat,
+} from "./extract/assets";
+import { componentSetSummary, componentSummary } from "./extract/components";
+import { enrichSerialized } from "./extract/enrich";
+import { BRIDGE_INFO } from "./extract/info";
+import { pageSummary } from "./extract/inventory";
+import { RefResolver } from "./extract/refs";
+import { numberParam, sanitize } from "./extract/safe";
+import { exportSubtree } from "./extract/subtree";
+import { getTokens } from "./extract/tokens";
+
 type RequestType =
   | "get_document"
   | "get_selection"
@@ -38,7 +53,15 @@ type RequestType =
   | "remove_animation_style"
   | "apply_manual_keyframe_track"
   | "remove_manual_keyframe_track"
-  | "set_timeline_duration";
+  | "set_timeline_duration"
+  | "get_bridge_info"
+  | "get_page_summary"
+  | "get_component_set"
+  | "export_subtree"
+  | "find_assets"
+  | "export_assets"
+  | "export_image_fills"
+  | "get_tokens";
 
 type ServerRequestParams = Record<string, unknown> & {
   format?: "PNG" | "SVG" | "JPG" | "PDF";
@@ -366,6 +389,16 @@ const requireEditorMode = (toolName: RequestType): void => {
   }
 };
 
+/** Resolves a request's target: the given node or page, or the current page when no id is given. */
+const getScope = async (nodeId?: string): Promise<SceneNode | PageNode> => {
+  if (!nodeId) return figma.currentPage;
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node || node.type === "DOCUMENT") {
+    throw new Error(`Node not found: ${nodeId}`);
+  }
+  return node as SceneNode | PageNode;
+};
+
 const handleRequest = async (request: ServerRequest): Promise<PluginResponse> => {
   try {
     if (EDIT_REQUEST_TYPES.has(request.type)) {
@@ -376,13 +409,15 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
         return {
           type: request.type,
           requestId: request.requestId,
-          data: serializeNode(figma.currentPage),
+          data: await enrichSerialized(serializeNode(figma.currentPage)),
         };
       case "get_selection":
         return {
           type: request.type,
           requestId: request.requestId,
-          data: figma.currentPage.selection.map((node) => serializeNode(node)),
+          data: await enrichSerialized(
+            figma.currentPage.selection.map((node) => serializeNode(node))
+          ),
         };
       case "get_node": {
         const nodeId = request.nodeIds && request.nodeIds[0];
@@ -393,10 +428,22 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
         if (!node || node.type === "DOCUMENT") {
           throw new Error(`Node not found: ${nodeId}`);
         }
+        if (node.type === "PAGE") {
+          // Serialising a whole page can exceed Figma's load limits; return the page summary instead.
+          return {
+            type: request.type,
+            requestId: request.requestId,
+            data: await pageSummary(node, {
+              includeVariants: false,
+              includeUsage: false,
+              usageBudgetMs: 0,
+            }),
+          };
+        }
         return {
           type: request.type,
           requestId: request.requestId,
-          data: serializeNode(node as SceneNode),
+          data: await enrichSerialized(serializeNode(node as SceneNode)),
         };
       }
       case "get_styles": {
@@ -506,17 +553,22 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
               name: figma.currentPage.name,
             },
             selectionCount: selection.length,
-            context: contextNodes,
+            context: await enrichSerialized(contextNodes),
           },
         };
       }
       case "get_variable_defs": {
         const collections = await figma.variables.getLocalVariableCollectionsAsync();
+        // One call for all variables: per-id lookups can exceed Figma's load limit on large files.
+        const variablesById = new Map(
+          (await figma.variables.getLocalVariablesAsync()).map((variable) => [
+            variable.id,
+            variable,
+          ])
+        );
         const variableData = await Promise.all(
           collections.map(async (collection) => {
-            const variables = await Promise.all(
-              collection.variableIds.map((id) => figma.variables.getVariableByIdAsync(id))
-            );
+            const variables = collection.variableIds.map((id) => variablesById.get(id) ?? null);
             return {
               id: collection.id,
               name: collection.name,
@@ -1835,6 +1887,117 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           },
         };
       }
+      case "get_bridge_info":
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: BRIDGE_INFO,
+        };
+      case "get_page_summary": {
+        const params = request.params ?? {};
+        const scope = await getScope(request.nodeIds?.[0]);
+        if (scope.type !== "PAGE") throw new Error(`Not a page: ${scope.id}`);
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await pageSummary(scope, {
+            includeVariants: params.includeVariants === true,
+            includeUsage: params.includeUsage === true,
+            usageBudgetMs: numberParam(params.usageBudgetMs, 8000, 100),
+          }),
+        };
+      }
+      case "get_component_set": {
+        const node = await getScope(request.nodeIds?.[0]);
+        if (node.type === "COMPONENT_SET")
+          return {
+            type: request.type,
+            requestId: request.requestId,
+            data: componentSetSummary(node, true),
+          };
+        if (node.type === "COMPONENT")
+          return {
+            type: request.type,
+            requestId: request.requestId,
+            data: componentSummary(node),
+          };
+        throw new Error(`Not a component or component set: ${node.id}`);
+      }
+      case "export_subtree": {
+        const params = request.params ?? {};
+        const root = await getScope(request.nodeIds?.[0]);
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await exportSubtree(root, new RefResolver(), {
+            depth: numberParam(params.depth, 1000, 1),
+            maxNodes: numberParam(params.maxNodes, 800, 1),
+            budgetMs: numberParam(params.budgetMs, 4000, 500),
+            includeHidden: params.includeHidden === true,
+          }),
+        };
+      }
+      case "find_assets": {
+        const params = request.params ?? {};
+        const scope = await getScope(request.nodeIds?.[0]);
+        const types =
+          Array.isArray(params.types) && params.types.length > 0
+            ? (params.types as NodeType[])
+            : (["COMPONENT"] as NodeType[]);
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await findAssets(
+            scope,
+            {
+              types,
+              maxSize: numberParam(params.maxSize, 256, 1),
+              includeImages: params.includeImages === true,
+              includeExportSettings: params.includeExportSettings !== false,
+            },
+            numberParam(params.cursor, 0, 0),
+            numberParam(params.limit, 500, 1),
+            numberParam(params.budgetMs, 4000, 500)
+          ),
+        };
+      }
+      case "export_assets": {
+        const params = request.params ?? {};
+        const format: AssetExportFormat =
+          params.format === "PNG" || params.format === "JPG" || params.format === "PDF"
+            ? params.format
+            : "SVG";
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await exportAssets(
+            request.nodeIds ?? [],
+            format,
+            numberParam(params.scale, 1, 0.01),
+            params.svgOutlineText !== false,
+            params.svgIdAttribute === true
+          ),
+        };
+      }
+      case "export_image_fills": {
+        const params = request.params ?? {};
+        const hashes = Array.isArray(params.hashes)
+          ? (params.hashes as unknown[]).filter((hash): hash is string => typeof hash === "string")
+          : [];
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await exportImageFills(hashes),
+        };
+      }
+      case "get_tokens": {
+        const params = request.params ?? {};
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await getTokens(new RefResolver(), params.includeLibraries !== false),
+        };
+      }
       default:
         throw new Error(`Unknown request type: ${request.type}`);
     }
@@ -1911,6 +2074,13 @@ figma.ui.onmessage = async (message) => {
     try {
       figma.ui.postMessage(response);
     } catch (err) {
+      // postMessage rejects values such as figma.mixed symbols; retry once with them replaced.
+      try {
+        figma.ui.postMessage(sanitize(response));
+        return;
+      } catch {
+        // Fall through and report the original error.
+      }
       figma.ui.postMessage({
         type: response.type,
         requestId: response.requestId,
