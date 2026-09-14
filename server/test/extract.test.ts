@@ -266,3 +266,43 @@ test("exportFile explains when the plugin lacks extraction support", async () =>
     /doesn't support design-system extraction/
   );
 });
+
+test("exportFile stops early but still writes the manifest when the plugin disconnects", async () => {
+  const outDir = await mkdtemp(path.join(os.tmpdir(), "figma-export-test-"));
+  const requests: string[] = [];
+  const lines: string[] = [];
+  const sender: BridgeSender = {
+    async sendWithParams(type) {
+      requests.push(type);
+      if (type === "get_bridge_info") return reply(type, { extractionApi: 1 });
+      if (type === "get_metadata") {
+        return reply(type, {
+          fileName: "Kit",
+          pages: [
+            { id: "0:1", name: "A" },
+            { id: "0:2", name: "B" },
+          ],
+        });
+      }
+      return failure(type, "Plugin disconnected: Kit (key)");
+    },
+  };
+  try {
+    const manifest = await exportFile(sender, {
+      ...DEFAULT_EXPORT_OPTIONS,
+      outDir,
+      retryDelayMs: 1,
+      log: (line) => lines.push(line),
+    });
+    assert.match(manifest.errors.at(-1) ?? "", /disconnected, so the export stopped early/);
+    assert.equal(requests.filter((type) => type === "get_tokens").length, 5);
+    for (const type of ["get_page_summary", "find_assets", "export_subtree", "get_screenshot"]) {
+      assert.equal(requests.includes(type), false, `${type} should not be requested`);
+    }
+    assert.ok(lines.some((line) => line.startsWith("✗ tokens:")));
+    const written = JSON.parse(await readFile(path.join(outDir, "manifest.json"), "utf8"));
+    assert.equal(written.errors.length, 2);
+  } finally {
+    await rm(outDir, { recursive: true, force: true });
+  }
+});

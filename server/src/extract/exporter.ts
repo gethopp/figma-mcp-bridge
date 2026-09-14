@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { request, type BridgeSender } from "./client.js";
+import { request, type BridgeSender, type RequestOptions } from "./client.js";
 import { countTokens, toDtcg, type RawTokens } from "./dtcg.js";
 import { renderIndex } from "./index-md.js";
 import { displayName, isSeparatorPage, matchKey, padIndex, slugify, uniqueName } from "./names.js";
@@ -41,6 +41,8 @@ export interface ExportOptions {
   componentUsage: boolean;
   subtree: SubtreeParams;
   log?: (line: string) => void;
+  /** Base delay before retrying transient errors, doubled per attempt (default 1000 ms). */
+  retryDelayMs?: number;
 }
 
 export const DEFAULT_EXPORT_OPTIONS: Omit<ExportOptions, "outDir"> = {
@@ -140,6 +142,9 @@ const IMAGE_TYPES = new Set([
 const MAX_EXPORT_PX = 16384;
 const ASSET_BATCH = 25;
 const FILL_BATCH = 10;
+/** Errors meaning the plugin is gone: stop instead of failing every remaining request. */
+const DISCONNECTED =
+  /No plugin connected|Plugin disconnected|Plugin not connected|Plugin connection error/i;
 
 const json = (value: unknown) => `${JSON.stringify(value, null, 1)}\n`;
 
@@ -199,7 +204,8 @@ const extensionFor = (mime: string) =>
 /**
  * Exports a Figma file to disk through the bridge: design tokens (raw and DTCG), a component inventory,
  * vector assets, full layer trees, frame screenshots with tiles and image fills, plus `manifest.json`
- * and an `index.md` guide. Works one request at a time and records per-page failures instead of aborting.
+ * and an `index.md` guide. Works one request at a time and records failures and keeps going; if the plugin
+ * disconnects it stops early but still writes the manifest and index.
  */
 export async function exportFile(
   sender: BridgeSender,
@@ -207,9 +213,12 @@ export async function exportFile(
 ): Promise<ExportManifest> {
   const log = options.log ?? (() => undefined);
   const { fileKey, outDir } = options;
-  const has = (section: ExportSection) => options.sections.includes(section);
+  let stopped: string | undefined;
+  const has = (section: ExportSection) => !stopped && options.sections.includes(section);
+  const ask = <T>(type: string, requestOptions: RequestOptions): Promise<T> =>
+    request<T>(sender, type, { retryDelayMs: options.retryDelayMs, ...requestOptions });
 
-  const bridge = await request<{ extractionApi?: number }>(sender, "get_bridge_info", {
+  const bridge = await ask<{ extractionApi?: number }>("get_bridge_info", {
     fileKey,
     retries: 1,
   }).catch(() => null);
@@ -219,7 +228,7 @@ export async function exportFile(
     );
   }
 
-  const meta = await request<{ fileName: string; pages: PageRef[] }>(sender, "get_metadata", {
+  const meta = await ask<{ fileName: string; pages: PageRef[] }>("get_metadata", {
     fileKey,
   });
   const contentPages = meta.pages.filter((page) => !isSeparatorPage(page.name));
@@ -252,13 +261,25 @@ export async function exportFile(
   };
   if (manifest.missingPages.length) log(`No page matching: ${manifest.missingPages.join(", ")}`);
   log(`Exporting "${meta.fileName}": ${pages.length} of ${contentPages.length} pages → ${outDir}`);
+  /** Records and prints a failure; stops the remaining work when the plugin has disconnected. */
+  const fail = (scope: string, err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    manifest.errors.push(`${scope}: ${message}`);
+    log(`✗ ${scope}: ${message}`);
+    if (!stopped && DISCONNECTED.test(message)) {
+      stopped =
+        "The Figma plugin disconnected, so the export stopped early. Run the plugin in the file again and re-export.";
+      manifest.errors.push(stopped);
+      log(`✗ ${stopped}`);
+    }
+  };
   await mkdir(outDir, { recursive: true });
 
   let inventory: { file: string; exportedAt: string; pages: Record<string, unknown>[] } | undefined;
 
   if (has("tokens")) {
     try {
-      const raw = await request<RawTokens>(sender, "get_tokens", {
+      const raw = await ask<RawTokens>("get_tokens", {
         fileKey,
         params: { includeLibraries: true },
       });
@@ -285,8 +306,7 @@ export async function exportFile(
         `✓ tokens: ${manifest.tokens.collections.length} collections, ${manifest.tokens.dtcgTokens} DTCG tokens`
       );
     } catch (err) {
-      manifest.errors.push(`tokens: ${(err as Error).message}`);
-      log(`✗ tokens: ${(err as Error).message}`);
+      fail("tokens", err);
     }
   }
 
@@ -299,11 +319,11 @@ export async function exportFile(
     let variants = 0;
     for (const page of pages) {
       try {
-        const summary = await request<{
+        const summary = await ask<{
           componentSets: Record<string, any>[];
           components: Record<string, any>[];
           usage?: unknown;
-        }>(sender, "get_page_summary", {
+        }>("get_page_summary", {
           nodeIds: [page.id],
           params: { includeVariants: true, includeUsage: options.componentUsage },
           fileKey,
@@ -344,7 +364,8 @@ export async function exportFile(
           });
         }
       } catch (err) {
-        manifest.errors.push(`components ${displayName(page.name)}: ${(err as Error).message}`);
+        fail(`components ${displayName(page.name)}`, err);
+        if (stopped) break;
       }
     }
     await write(outDir, "components.json", json(inventory));
@@ -360,8 +381,9 @@ export async function exportFile(
       try {
         const found: Record<string, any>[] = [];
         for (let cursor: number | null = 0; cursor !== null;) {
-          const result: { assets: Record<string, any>[]; nextCursor: number | null } =
-            await request(sender, "find_assets", {
+          const result: { assets: Record<string, any>[]; nextCursor: number | null } = await ask(
+            "find_assets",
+            {
               nodeIds: [page.id],
               params: {
                 types: options.assetTypes,
@@ -372,7 +394,8 @@ export async function exportFile(
                 limit: 300,
               },
               fileKey,
-            });
+            }
+          );
           found.push(...result.assets);
           cursor = result.nextCursor;
         }
@@ -393,15 +416,11 @@ export async function exportFile(
         for (const format of options.assetFormats) {
           for (let i = 0; i < found.length; i += ASSET_BATCH) {
             const batch = found.slice(i, i + ASSET_BATCH);
-            const result = await request<{ exports: Record<string, any>[] }>(
-              sender,
-              "export_assets",
-              {
-                nodeIds: batch.map((asset) => asset.id),
-                params: { format, scale: options.assetScale },
-                fileKey,
-              }
-            );
+            const result = await ask<{ exports: Record<string, any>[] }>("export_assets", {
+              nodeIds: batch.map((asset) => asset.id),
+              params: { format, scale: options.assetScale },
+              fileKey,
+            });
             for (const item of result.exports) {
               if (item.error) {
                 errors.set(item.id, item.error);
@@ -433,7 +452,8 @@ export async function exportFile(
         byPage.push({ name: displayName(page.name), slug, count: found.length });
         log(`✓ assets ${displayName(page.name)}: ${found.length}`);
       } catch (err) {
-        manifest.errors.push(`assets ${displayName(page.name)}: ${(err as Error).message}`);
+        fail(`assets ${displayName(page.name)}`, err);
+        if (stopped) break;
       }
     }
     await write(
@@ -485,14 +505,10 @@ export async function exportFile(
           });
           if (has("imageFills")) collectImageHashes(root, imageHashes);
         } else {
-          const summary = await request<{ topLevel: Record<string, any>[] }>(
-            sender,
-            "get_page_summary",
-            {
-              nodeIds: [page.id],
-              fileKey,
-            }
-          );
+          const summary = await ask<{ topLevel: Record<string, any>[] }>("get_page_summary", {
+            nodeIds: [page.id],
+            fileKey,
+          });
           entry.topLevel = summary.topLevel
             .filter((child) => !child.hidden)
             .map((child) => ({
@@ -515,15 +531,11 @@ export async function exportFile(
             );
             const base = `images/${slug}/${padIndex(index + 1)}-${slugify(frame.name)}`;
             try {
-              const result = await request<{ exports: { base64: string }[] }>(
-                sender,
-                "get_screenshot",
-                {
-                  nodeIds: [frame.id],
-                  params: { format: "PNG", scale },
-                  fileKey,
-                }
-              );
+              const result = await ask<{ exports: { base64: string }[] }>("get_screenshot", {
+                nodeIds: [frame.id],
+                params: { format: "PNG", scale },
+                fileKey,
+              });
               const buffer = Buffer.from(result.exports[0].base64, "base64");
               await write(outDir, `${base}.png`, buffer);
               const tiles: string[] = [];
@@ -535,6 +547,7 @@ export async function exportFile(
               entry.images.push({ id: frame.id, file: `${base}.png`, scale, tiles });
             } catch (err) {
               entry.images.push({ id: frame.id, tiles: [], error: (err as Error).message });
+              if (DISCONNECTED.test((err as Error).message)) throw err;
             }
           }
         }
@@ -546,10 +559,10 @@ export async function exportFile(
       } catch (err) {
         entry.status = "failed";
         entry.error = (err as Error).message;
-        manifest.errors.push(`page ${entry.name}: ${entry.error}`);
-        log(`✗ ${entry.name}: ${entry.error}`);
+        fail(`page ${entry.name}`, err);
       }
       manifest.pages.push(entry);
+      if (stopped) break;
     }
   }
 
@@ -559,14 +572,10 @@ export async function exportFile(
     let failed = 0;
     for (let i = 0; i < hashes.length; i += FILL_BATCH) {
       try {
-        const result = await request<{ images: Record<string, any>[] }>(
-          sender,
-          "export_image_fills",
-          {
-            params: { hashes: hashes.slice(i, i + FILL_BATCH) },
-            fileKey,
-          }
-        );
+        const result = await ask<{ images: Record<string, any>[] }>("export_image_fills", {
+          params: { hashes: hashes.slice(i, i + FILL_BATCH) },
+          fileKey,
+        });
         for (const image of result.images) {
           if (image.error) {
             failed++;
@@ -581,7 +590,8 @@ export async function exportFile(
         }
       } catch (err) {
         failed += Math.min(FILL_BATCH, hashes.length - i);
-        manifest.errors.push(`image fills: ${(err as Error).message}`);
+        fail("image fills", err);
+        if (stopped) break;
       }
     }
     manifest.imageFills = { dir: "images/fills", count, failed };
