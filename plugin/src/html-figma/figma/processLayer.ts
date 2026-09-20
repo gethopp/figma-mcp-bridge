@@ -4,7 +4,14 @@ import { getMatchingFont } from "./getFont";
 import { assign } from "./helpers";
 import { LayerNode, PlainLayerNode, WithRef } from "../types";
 
-const processDefaultElement = (layer: LayerNode, node: SceneNode): SceneNode => {
+/**
+ * The nodes `createNodeFromLayer` produces all support `resize`; `SceneNode` as
+ * a whole does not (a StickyNode has no `resize`), so narrow to what callers
+ * actually pass.
+ */
+type CreatedLayerNode = NonNullable<ReturnType<typeof createNodeFromLayer>>;
+
+const processDefaultElement = (layer: LayerNode, node: CreatedLayerNode): CreatedLayerNode => {
   node.x = layer.x as number;
   node.y = layer.y as number;
   node.resize(layer.width || 1, layer.height || 1);

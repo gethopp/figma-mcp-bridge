@@ -1,4 +1,5 @@
 import { serializeNode } from "./serializer";
+import type { SerializableNode } from "./serializer";
 import { addLayersToFrame } from "../html-figma/figma";
 
 type RequestType =
@@ -456,7 +457,7 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
       case "get_design_context": {
         const depth = typeof request.params?.depth === "number" ? request.params.depth : 2;
         const serializeWithDepth = async (
-          node: unknown,
+          node: SerializableNode,
           currentDepth: number
         ): Promise<ReturnType<typeof serializeNode>> => {
           const serialized = serializeNode(node);
@@ -494,7 +495,7 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
         const contextNodes =
           selection.length > 0
             ? await Promise.all(selection.map((node) => serializeWithDepth(node, 0)))
-            : [await serializeWithDepth(figma.currentPage as unknown as SceneNode, 0)];
+            : [await serializeWithDepth(figma.currentPage, 0)];
 
         return {
           type: request.type,
@@ -806,7 +807,7 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
 
         if (typeof params.x === "number" || typeof params.y === "number") {
           if (!("x" in node) || !("y" in node)) {
-            throw new Error(`Node does not support x/y positioning: ${node.id}`);
+            throw new Error(`Node does not support x/y positioning: ${nodeId}`);
           }
           positionNode(node, params.x, params.y);
           applied.x = node.x;
@@ -839,8 +840,9 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           if (!("cornerRadius" in node)) {
             throw new Error(`Node does not support cornerRadius: ${node.id}`);
           }
-          node.cornerRadius = params.cornerRadius;
-          applied.cornerRadius = node.cornerRadius;
+          const cornerNode = node as CornerMixin;
+          cornerNode.cornerRadius = params.cornerRadius;
+          applied.cornerRadius = cornerNode.cornerRadius;
         }
 
         return {
@@ -1339,8 +1341,11 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
         }
 
         if (typeof params.strokeHex === "string") {
+          // Captured before the guard: every shape created above has `strokes`,
+          // so TypeScript narrows `node` to `never` inside it.
+          const shapeId = node.id;
           if (!("strokes" in node)) {
-            throw new Error(`Node does not support strokes: ${node.id}`);
+            throw new Error(`Node does not support strokes: ${shapeId}`);
           }
           const strokeOpacity =
             typeof params.strokeOpacity === "number" ? params.strokeOpacity : undefined;
