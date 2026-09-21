@@ -186,7 +186,7 @@ export function registerTools(server: McpServer, node: Node, port: number): void
 
   server.tool(
     "get_variable_defs",
-    "Get all local variable definitions including variable collections, modes, and variable values. Variables are Figma's system for design tokens (colors, numbers, strings, booleans). When multiple files are connected, specify fileKey.",
+    "Get all local variable definitions: collections with their default mode, and every variable with its resolved type, scopes, description, and per-mode values. Variables are Figma's system for design tokens (colors, numbers, strings, booleans). When multiple files are connected, specify fileKey.",
     toolInputSchemas.get_variable_defs.shape,
     async ({ fileKey }): Promise<ToolResult> => {
       return renderResponse(() => node.send("get_variable_defs", undefined, fileKey));

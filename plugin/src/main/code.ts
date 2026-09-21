@@ -506,6 +506,7 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
             return {
               id: collection.id,
               name: collection.name,
+              defaultModeId: collection.defaultModeId,
               modes: collection.modes.map((mode) => ({
                 modeId: mode.modeId,
                 name: mode.name,
@@ -516,6 +517,8 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
                   id: variable.id,
                   name: variable.name,
                   resolvedType: variable.resolvedType,
+                  description: variable.description,
+                  scopes: variable.scopes,
                   valuesByMode: Object.fromEntries(
                     Object.entries(variable.valuesByMode).map(([modeId, value]) => [
                       modeId,
