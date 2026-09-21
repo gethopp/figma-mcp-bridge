@@ -8,6 +8,7 @@ import type { Node } from "./node.js";
 import {
   createFrameInput,
   createImageInput,
+  createSvgInput,
   createPageInput,
   importHtmlLayersInput,
   createShapeShape,
@@ -35,6 +36,7 @@ import type { BridgeResponse } from "./types.js";
 import { Follower } from "./follower.js";
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+const MAX_SVG_BYTES = 2 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 15_000;
 const MAX_IMAGE_REDIRECTS = 5;
 
@@ -389,6 +391,30 @@ export function registerTools(server: McpServer, node: Node, port: number): void
   );
 
   server.tool(
+    "create_svg",
+    "Insert raw SVG markup or a workspace-local SVG file as editable Figma vector layers using figma.createNodeFromSvg. You can set its parent, position, size, and semantic name. When multiple files are connected, specify fileKey.",
+    createSvgInput.shape,
+    async ({ source, fileKey, ...params }): Promise<ToolResult> => {
+      try {
+        const svgText = await loadSvgSource(source, process.cwd());
+        return await renderResponse(() =>
+          node.sendWithParams("create_svg", undefined, { ...params, svgText }, fileKey)
+        );
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: err instanceof Error ? err.message : String(err),
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
     "import_html_layers",
     "Import a DOM serialization (JSON produced by html-figma's browser htmlToFigma()) as editable Figma layers inside a new wrapper frame — frames, text, rectangles, and SVG vectors in one call. Source must be a JSON file path inside the MCP server working directory. Optionally append the wrapper into an existing frame/section via parentId. Requires the plugin to be open in the design editor. When multiple files are connected, specify fileKey.",
     importHtmlLayersInput.shape,
@@ -725,6 +751,48 @@ function resolveAndValidateOutputPath(outputPath: string, workspaceRoot: string)
     throw new Error(`outputPath must be inside the MCP server working directory: ${resolvedRoot}`);
   }
   return resolvedPath;
+}
+
+async function loadSvgSource(source: string, workspaceRoot: string): Promise<string> {
+  const inline = source.trimStart();
+  let svgText: string;
+
+  if (/^<svg(?:\s|>)/i.test(inline)) {
+    svgText = source;
+  } else {
+    const resolvedRoot = await realpath(path.resolve(workspaceRoot));
+    const lexicalPath = path.resolve(resolvedRoot, source);
+    let resolvedPath: string;
+    try {
+      resolvedPath = await realpath(lexicalPath);
+    } catch {
+      throw new Error("SVG source not found: " + source);
+    }
+
+    const relativePath = path.relative(resolvedRoot, resolvedPath);
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      throw new Error(
+        "SVG source must be inside the MCP server working directory: " + resolvedRoot
+      );
+    }
+
+    const info = await stat(resolvedPath);
+    if (!info.isFile()) {
+      throw new Error("SVG source is not a regular file: " + source);
+    }
+    if (info.size > MAX_SVG_BYTES) {
+      throw new Error("SVG source exceeds the " + MAX_SVG_BYTES + " byte bridge limit");
+    }
+    svgText = await readFile(resolvedPath, "utf8");
+  }
+
+  if (Buffer.byteLength(svgText, "utf8") > MAX_SVG_BYTES) {
+    throw new Error("SVG source exceeds the " + MAX_SVG_BYTES + " byte bridge limit");
+  }
+  if (!/^<svg(?:\s|>)/i.test(svgText.trimStart())) {
+    throw new Error("SVG source must begin with an <svg> element");
+  }
+  return svgText;
 }
 
 /**
