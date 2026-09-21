@@ -1,6 +1,23 @@
 import { serializeNode } from "./serializer";
 import type { SerializableNode } from "./serializer";
 import { addLayersToFrame } from "../html-figma/figma";
+import { getExtensionHandler } from "./extensions";
+import type { ExtensionHandler, ExtensionRequestType } from "./extensions";
+import {
+  appendToParentIfProvided,
+  ensureFont,
+  getParentNodeById,
+  getSceneNodeById,
+  getTextNodeById,
+  isSceneNode,
+  isTextNode,
+  loadFontsForTextNode,
+  parseHexColor,
+  positionNode,
+  resizeNodeIfSupported,
+  serializeVariableValue,
+  supportsChildren,
+} from "./shared";
 
 type RequestType =
   | "get_document"
@@ -40,7 +57,8 @@ type RequestType =
   | "remove_animation_style"
   | "apply_manual_keyframe_track"
   | "remove_manual_keyframe_track"
-  | "set_timeline_duration";
+  | "set_timeline_duration"
+  | ExtensionRequestType;
 
 type ServerRequestParams = Record<string, unknown> & {
   format?: "PNG" | "SVG" | "JPG" | "PDF";
@@ -117,92 +135,8 @@ const sendStatus = () => {
   });
 };
 
-const serializeVariableValue = (value: VariableValue): unknown => {
-  if (typeof value === "object" && value !== null) {
-    if ("type" in value && value.type === "VARIABLE_ALIAS") {
-      return { type: "VARIABLE_ALIAS", id: value.id };
-    }
-    if ("r" in value && "g" in value && "b" in value) {
-      // It's an RGB or RGBA color
-      const color = value as RGBA;
-      return {
-        type: "COLOR",
-        r: color.r,
-        g: color.g,
-        b: color.b,
-        a: "a" in color ? color.a : 1,
-      };
-    }
-  }
-  return value;
-};
-
-const isSceneNode = (node: BaseNode | null): node is SceneNode =>
-  node !== null && node.type !== "DOCUMENT" && node.type !== "PAGE";
-
-const isTextNode = (node: BaseNode | null): node is TextNode =>
-  node !== null && node.type === "TEXT";
-
-const getSceneNodeById = async (nodeId: string): Promise<SceneNode> => {
-  const node = await figma.getNodeByIdAsync(nodeId);
-  if (!isSceneNode(node)) {
-    throw new Error(`Node not found: ${nodeId}`);
-  }
-  return node;
-};
-
-const getTextNodeById = async (nodeId: string): Promise<TextNode> => {
-  const node = await figma.getNodeByIdAsync(nodeId);
-  if (!isTextNode(node)) {
-    throw new Error(`Text node not found: ${nodeId}`);
-  }
-  return node;
-};
-
-const supportsChildren = (node: BaseNode): node is BaseNode & ChildrenMixin =>
-  "appendChild" in node;
-
 const isMotionNode = (node: SceneNode): node is SceneNode & MotionNodeMixin =>
   "applyAnimationStyle" in node;
-
-const getParentNodeById = async (parentId: string): Promise<BaseNode & ChildrenMixin> => {
-  const parent = await figma.getNodeByIdAsync(parentId);
-  if (!parent || parent.type === "DOCUMENT" || !supportsChildren(parent)) {
-    throw new Error(`Parent does not support children: ${parentId}`);
-  }
-  // Under `documentAccess: "dynamic-page"` a page's children are inaccessible
-  // until the page is explicitly loaded, so every caller would otherwise have
-  // to guard before appending.
-  if (parent.type === "PAGE") {
-    await parent.loadAsync();
-  }
-  return parent;
-};
-
-const parseHexColor = (hex: string): RGB => {
-  const normalized = hex.trim().replace(/^#/, "");
-  if (normalized.length !== 3 && normalized.length !== 6) {
-    throw new Error(`Invalid hex color: ${hex}`);
-  }
-
-  const expanded =
-    normalized.length === 3
-      ? normalized
-          .split("")
-          .map((char) => `${char}${char}`)
-          .join("")
-      : normalized;
-
-  if (!/^[0-9a-fA-F]{6}$/.test(expanded)) {
-    throw new Error(`Invalid hex color: ${hex}`);
-  }
-
-  return {
-    r: parseInt(expanded.slice(0, 2), 16) / 255,
-    g: parseInt(expanded.slice(2, 4), 16) / 255,
-    b: parseInt(expanded.slice(4, 6), 16) / 255,
-  };
-};
 
 const setSolidFill = (
   node: SceneNode,
@@ -261,28 +195,6 @@ const buildGradientPaint = (
   return paint;
 };
 
-const loadFontsForTextNode = async (node: TextNode): Promise<void> => {
-  const fonts = new Map<string, FontName>();
-
-  if (node.characters.length > 0) {
-    for (const font of node.getRangeAllFontNames(0, node.characters.length)) {
-      fonts.set(`${font.family}::${font.style}`, font);
-    }
-  } else if (typeof node.fontName !== "symbol") {
-    fonts.set(`${node.fontName.family}::${node.fontName.style}`, node.fontName);
-  } else {
-    throw new Error(`Cannot determine font for empty mixed-font text node: ${node.id}`);
-  }
-
-  await Promise.all([...fonts.values()].map((font) => figma.loadFontAsync(font)));
-};
-
-const ensureFont = async (family: string, style: string): Promise<FontName> => {
-  const font: FontName = { family, style };
-  await figma.loadFontAsync(font);
-  return font;
-};
-
 const applyTextFill = (node: TextNode, fillHex: string, fillOpacity?: number): void => {
   node.fills = [
     {
@@ -291,35 +203,6 @@ const applyTextFill = (node: TextNode, fillHex: string, fillOpacity?: number): v
       opacity: fillOpacity ?? 1,
     },
   ];
-};
-
-const positionNode = (node: SceneNode, x: unknown, y: unknown): void => {
-  if ("x" in node && typeof x === "number") {
-    node.x = x;
-  }
-  if ("y" in node && typeof y === "number") {
-    node.y = y;
-  }
-};
-
-const resizeNodeIfSupported = (node: SceneNode, width: unknown, height: unknown): void => {
-  if (typeof width !== "number" && typeof height !== "number") {
-    return;
-  }
-  if (!("resize" in node) || typeof node.resize !== "function") {
-    throw new Error(`Node does not support resizing: ${node.id}`);
-  }
-  const nextWidth = typeof width === "number" ? width : node.width;
-  const nextHeight = typeof height === "number" ? height : node.height;
-  node.resize(nextWidth, nextHeight);
-};
-
-const appendToParentIfProvided = async (node: SceneNode, parentId: unknown): Promise<void> => {
-  if (typeof parentId !== "string") {
-    return;
-  }
-  const parent = await getParentNodeById(parentId);
-  parent.appendChild(node);
 };
 
 const decodeBase64ToBytes = (base64: string): Uint8Array => {
@@ -421,8 +304,47 @@ async function getLayoutTree(rootId: string, maxNodes = 2000) {
   };
 }
 
+/**
+ * Runs an extension handler and makes sure its error names the tool.
+ *
+ * An extension throws from wherever it found the problem, and a shared helper
+ * such as the collection lookup cannot know which tool called it. Naming the
+ * tool here gives every message the same four parts — tool, field, cause, and
+ * correction — without repeating the name in the handlers that already carry
+ * it, such as the one a failed batch validation builds.
+ * @param extension - The handler to run.
+ * @param request - The request to pass to it.
+ * @returns Whatever the handler returns.
+ */
+const runExtension = async (
+  extension: ExtensionHandler,
+  request: ServerRequest
+): Promise<unknown> => {
+  try {
+    return await extension.run({
+      nodeIds: request.nodeIds,
+      params: request.params ?? {},
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes(request.type)) throw error;
+    throw new Error(`${request.type}: ${message}`);
+  }
+};
+
 const handleRequest = async (request: ServerRequest): Promise<PluginResponse> => {
   try {
+    // Extension tools are dispatched through their own map, so adding one does
+    // not mean touching the switch below. Errors fall through to the same catch.
+    const extension = getExtensionHandler(request.type);
+    if (extension) {
+      if (extension.edit) {
+        requireEditorMode(request.type);
+      }
+      const data = await runExtension(extension, request);
+      return { type: request.type, requestId: request.requestId, data };
+    }
+
     if (EDIT_REQUEST_TYPES.has(request.type)) {
       requireEditorMode(request.type);
     }
