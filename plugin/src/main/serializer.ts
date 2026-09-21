@@ -78,6 +78,14 @@ type SerializedStyles = {
   constraints?: { horizontal: string; vertical: string };
 };
 
+/**
+ * The variables a node binds, as field to variable ID. An array field such as
+ * `fills` maps to one ID per entry, and `componentProperties` keeps its own
+ * property names. IDs only: resolving one to a variable name needs an async
+ * lookup, and this serializer is synchronous.
+ */
+type SerializedBoundVariables = Record<string, string | string[] | Record<string, string>>;
+
 type SerializedBounds = {
   x: number;
   y: number;
@@ -92,6 +100,7 @@ type SerializedNode = {
   bounds?: SerializedBounds;
   characters?: string;
   styles?: SerializedStyles;
+  boundVariables?: SerializedBoundVariables;
   children?: SerializedNode[];
   childCount?: number;
 };
@@ -347,6 +356,50 @@ const serializeStyles = (node: SerializableNode): SerializedStyles => {
 };
 
 /**
+ * Reads the variable ID out of a bound-variable alias.
+ * @param value - One entry of a node's `boundVariables`.
+ * @returns The variable ID, or undefined when the entry is not an alias.
+ */
+const toAliasId = (value: unknown): string | undefined => {
+  if (typeof value !== "object" || value === null || !("id" in value)) return undefined;
+  const id = (value as VariableAlias).id;
+  return typeof id === "string" ? id : undefined;
+};
+
+/**
+ * Maps every field a node binds to the ID of the variable bound to it.
+ * @param node - The node to read.
+ * @returns The bindings, or undefined when the node binds nothing.
+ */
+const serializeBoundVariables = (node: SerializableNode): SerializedBoundVariables | undefined => {
+  if (!("boundVariables" in node) || !node.boundVariables) return undefined;
+
+  const bound: SerializedBoundVariables = {};
+  for (const [field, value] of Object.entries(node.boundVariables as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      const ids = value.map(toAliasId).filter((id): id is string => id !== undefined);
+      if (ids.length > 0) bound[field] = ids;
+      continue;
+    }
+    const id = toAliasId(value);
+    if (id !== undefined) {
+      bound[field] = id;
+      continue;
+    }
+    // `componentProperties` keys its aliases by property name instead.
+    if (typeof value === "object" && value !== null) {
+      const byProperty: Record<string, string> = {};
+      for (const [property, alias] of Object.entries(value as Record<string, unknown>)) {
+        const aliasId = toAliasId(alias);
+        if (aliasId !== undefined) byProperty[property] = aliasId;
+      }
+      if (Object.keys(byProperty).length > 0) bound[field] = byProperty;
+    }
+  }
+  return Object.keys(bound).length > 0 ? bound : undefined;
+};
+
+/**
  * `serializeNode` is also called with the current page (get_document,
  * get_design_context), which shares the id/name/type/children surface it reads.
  * Every property beyond that is read behind an `in` check.
@@ -361,6 +414,9 @@ export const serializeNode = (node: SerializableNode): SerializedNode => {
     bounds: getBounds(node),
     styles: serializeStyles(node),
   };
+
+  const boundVariables = serializeBoundVariables(node);
+  if (boundVariables) base.boundVariables = boundVariables;
 
   if (node.type === "TEXT") {
     return serializeText(node, base);
