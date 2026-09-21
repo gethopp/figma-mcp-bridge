@@ -33,15 +33,13 @@ import {
 } from "./schema.js";
 import type { BridgeResponse } from "./types.js";
 import { Follower } from "./follower.js";
+import { parseToolInput, renderResponse } from "./tool-helpers.js";
+import type { ToolResult } from "./tool-helpers.js";
+import { registerExtensionTools } from "./extensions/index.js";
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 15_000;
 const MAX_IMAGE_REDIRECTS = 5;
-
-type ToolResult = {
-  content: Array<{ type: "text"; text: string }>;
-  isError?: boolean;
-};
 
 export type ExportFormat = "PNG" | "SVG" | "JPG" | "PDF";
 
@@ -611,6 +609,8 @@ export function registerTools(server: McpServer, node: Node, port: number): void
       }
     }
   );
+
+  registerExtensionTools(server, node);
 }
 
 /**
@@ -659,62 +659,6 @@ export async function executeSaveScreenshots(
     failed,
     hasErrors: failed > 0,
     results,
-  };
-}
-
-/**
- * Wraps a bridge call and converts the result into a tool result.
- * @param fn - Bridge call to execute.
- * @returns Tool result with the bridge response or an error message.
- */
-async function renderResponse(fn: () => Promise<BridgeResponse>): Promise<ToolResult> {
-  try {
-    const resp = await fn();
-    if (resp.error) {
-      return {
-        content: [{ type: "text", text: resp.error }],
-        isError: true,
-      };
-    }
-    return {
-      content: [{ type: "text", text: JSON.stringify(resp.data) }],
-    };
-  } catch (err) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: err instanceof Error ? err.message : String(err),
-        },
-      ],
-      isError: true,
-    };
-  }
-}
-
-/**
- * Parses raw tool arguments with a Zod schema and returns a typed result or a tool error.
- * @param schema - Zod schema to validate against.
- * @param args - Raw arguments from the MCP client.
- * @returns Parsed data on success, or an error tool result on failure.
- */
-function parseToolInput<T>(
-  // Input type is left open so transforming schemas (whose output differs from
-  // their input, e.g. the alias-normalising set_* inputs) can be passed in.
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
-  args: unknown
-): { success: true; data: T } | { success: false; error: ToolResult } {
-  const result = schema.safeParse(args);
-  if (result.success) {
-    return { success: true, data: result.data };
-  }
-
-  return {
-    success: false,
-    error: {
-      content: [{ type: "text", text: result.error.issues[0].message }],
-      isError: true,
-    },
   };
 }
 
