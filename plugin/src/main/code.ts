@@ -389,7 +389,7 @@ async function getLayoutTree(rootId: string, maxNodes = 2000) {
       localSize: { width: node.width, height: node.height },
       absoluteTransform: node.absoluteTransform,
       absoluteBoundingBox: node.absoluteBoundingBox,
-      absoluteRenderBounds: node.absoluteRenderBounds,
+      absoluteRenderBounds: "absoluteRenderBounds" in node ? node.absoluteRenderBounds : null,
       clipsContent: "clipsContent" in node ? node.clipsContent : false,
     });
     if ("children" in node) for (const child of node.children) visit(child, depth + 1);
