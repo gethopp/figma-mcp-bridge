@@ -37,6 +37,18 @@ export const createHexColorSchema = () =>
     .string()
     .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "Color must be a hex value like '#FFAA00'");
 
+/**
+ * Creates a Zod schema that validates a variable ID.
+ * @returns A Zod string schema for variable IDs.
+ */
+export const createVariableIdSchema = () =>
+  z
+    .string()
+    .regex(
+      /^VariableID:.+$/,
+      "Variable ID must start with 'VariableID:' — use an ID from get_variable_defs"
+    );
+
 export const fileKeyField = z
   .string()
   .optional()
