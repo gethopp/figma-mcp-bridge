@@ -65,47 +65,54 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 
 ## Available Tools
 
-| Tool                           | Description                                                                            |
-| ------------------------------ | -------------------------------------------------------------------------------------- |
-| `list_files`                   | List all connected Figma files (supports multi-file workflows)                         |
-| `get_document`                 | Get the current Figma page document tree                                               |
-| `get_selection`                | Get the currently selected nodes in Figma                                              |
-| `get_node`                     | Get a specific Figma node by ID (colon format, e.g. `4029:12345`)                      |
-| `get_styles`                   | Get all local paint, text, effect, and grid styles                                     |
-| `get_metadata`                 | Get file name, pages, and current page info                                            |
-| `get_design_context`           | Get a depth-limited tree optimized for understanding design context                    |
-| `get_variable_defs`            | Get all variable collections, modes, and values (design tokens)                        |
-| `get_screenshot`               | Export nodes as PNG/SVG/JPG/PDF (base64-encoded)                                       |
-| `save_screenshots`             | Export and save screenshots directly to the local filesystem                           |
-| `get_motion_styles`            | List all available animation presets (beta)                                            |
-| `get_node_motion`              | Read a node's current animation styles and properties (beta)                           |
-| `apply_animation_style`        | Apply a preset animation style to a node (beta)                                        |
-| `remove_animation_style`       | Remove an applied animation style from a node (beta)                                   |
-| `apply_manual_keyframe_track`  | Apply a manual keyframe track to a node property (beta)                                |
-| `remove_manual_keyframe_track` | Remove a manual keyframe track from a node property (beta)                             |
-| `set_timeline_duration`        | Set the duration of a timeline in seconds (beta)                                       |
-| `set_node_visibility`          | Show or hide specific nodes                                                            |
-| `set_text_content`             | Replace the contents of a text node                                                    |
-| `set_text_properties`          | Patch font, size, alignment, auto-resize, color, and bounds on a text node             |
-| `set_node_properties`          | Patch common node properties: name, position, size, visibility, opacity, corner radius |
-| `set_solid_fill`               | Replace a node's fill or stroke with a single solid paint                              |
-| `set_gradient_fill`            | Replace a node's fill or stroke with a linear/radial/angular/diamond gradient          |
-| `set_effects`                  | Replace a node's effects list (drop/inner shadows, layer/background blurs)             |
-| `set_stroke_properties`        | Patch stroke weight, align, dash pattern, cap, and join                                |
-| `set_auto_layout`              | Configure auto-layout direction, padding, gap, alignment, sizing, and wrap             |
-| `create_page`                  | Create a new page in the document, optionally switching to it                          |
-| `create_frame`                 | Create a new frame, optionally under a parent                                          |
-| `create_text`                  | Create a new text node                                                                 |
-| `create_shape`                 | Create a rectangle, ellipse, or line                                                   |
-| `create_image`                 | Create an image-backed rectangle from a local path, URL, or data URI                   |
-| `import_html_layers`           | Bulk-import an html-figma layer tree (JSON) as frames, text, rectangles, and vectors   |
-| `duplicate_nodes`              | Duplicate nodes in place                                                               |
-| `reparent_nodes`               | Move nodes into another parent                                                         |
-| `group_nodes`                  | Wrap a list of nodes (sharing a parent) in a new group                                 |
-| `ungroup_node`                 | Ungroup a group or frame — children move up to its parent                              |
-| `set_selection`                | Set the page selection to a list of node IDs (works in Dev Mode)                       |
-| `scroll_and_zoom_into_view`    | Frame the viewport around the given nodes (works in Dev Mode)                          |
-| `delete_nodes`                 | Delete nodes with explicit confirmation                                                |
+| Tool                           | Description                                                                                          |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `list_files`                   | List all connected Figma files (supports multi-file workflows)                                       |
+| `get_document`                 | Get the current Figma page document tree                                                             |
+| `get_selection`                | Get the currently selected nodes in Figma                                                            |
+| `get_node`                     | Get a specific Figma node by ID (colon format, e.g. `4029:12345`)                                    |
+| `get_styles`                   | Get all local paint, text, effect, and grid styles                                                   |
+| `get_metadata`                 | Get file name, pages, and current page info                                                          |
+| `get_design_context`           | Get a depth-limited tree optimized for understanding design context                                  |
+| `get_variable_defs`            | Get all variable collections, modes, and values (design tokens)                                      |
+| `get_screenshot`               | Export nodes as PNG/SVG/JPG/PDF (base64-encoded)                                                     |
+| `save_screenshots`             | Export and save screenshots directly to the local filesystem                                         |
+| `get_motion_styles`            | List all available animation presets (beta)                                                          |
+| `get_node_motion`              | Read a node's current animation styles and properties (beta)                                         |
+| `apply_animation_style`        | Apply a preset animation style to a node (beta)                                                      |
+| `remove_animation_style`       | Remove an applied animation style from a node (beta)                                                 |
+| `apply_manual_keyframe_track`  | Apply a manual keyframe track to a node property (beta)                                              |
+| `remove_manual_keyframe_track` | Remove a manual keyframe track from a node property (beta)                                           |
+| `set_timeline_duration`        | Set the duration of a timeline in seconds (beta)                                                     |
+| `set_node_visibility`          | Show or hide specific nodes                                                                          |
+| `set_text_content`             | Replace the contents of a text node                                                                  |
+| `set_text_properties`          | Patch font, size, alignment, auto-resize, color, and bounds on a text node                           |
+| `set_node_properties`          | Patch common node properties: name, position, size, visibility, opacity, corner radius               |
+| `set_solid_fill`               | Replace a node's fill or stroke with a single solid paint                                            |
+| `set_gradient_fill`            | Replace a node's fill or stroke with a linear/radial/angular/diamond gradient                        |
+| `set_effects`                  | Replace a node's effects list (drop/inner shadows, layer/background blurs)                           |
+| `set_stroke_properties`        | Patch stroke weight, align, dash pattern, cap, and join                                              |
+| `set_auto_layout`              | Configure auto-layout direction, padding, gap, alignment, sizing, and wrap                           |
+| `create_page`                  | Create a new page in the document, optionally switching to it                                        |
+| `create_frame`                 | Create a new frame, optionally under a parent                                                        |
+| `create_text`                  | Create a new text node                                                                               |
+| `create_shape`                 | Create a rectangle, ellipse, or line                                                                 |
+| `create_image`                 | Create an image-backed rectangle from a local path, URL, or data URI                                 |
+| `import_html_layers`           | Bulk-import an html-figma layer tree (JSON) as frames, text, rectangles, and vectors                 |
+| `duplicate_nodes`              | Duplicate nodes in place                                                                             |
+| `reparent_nodes`               | Move nodes into another parent                                                                       |
+| `group_nodes`                  | Wrap a list of nodes (sharing a parent) in a new group                                               |
+| `ungroup_node`                 | Ungroup a group or frame — children move up to its parent                                            |
+| `set_selection`                | Set the page selection to a list of node IDs (works in Dev Mode)                                     |
+| `scroll_and_zoom_into_view`    | Frame the viewport around the given nodes (works in Dev Mode)                                        |
+| `delete_nodes`                 | Delete nodes with explicit confirmation                                                              |
+| `create_variable_collection`   | Create a variable collection for design tokens                                                       |
+| `update_variable_collection`   | Rename a variable collection                                                                         |
+| `delete_variable_collection`   | Delete a variable collection and every variable in it, with explicit confirmation                    |
+| `create_variables`             | Create up to 200 variables in one collection, with values, aliases, and scopes                       |
+| `update_variables`             | Change the name, value, scopes, or description of up to 200 variables                                |
+| `delete_variables`             | Delete up to 200 variables and report what aliased each one, with explicit confirmation              |
+| `bind_variables`               | Bind a variable to a node field such as `fills`, `itemSpacing`, or `characters`, or remove a binding |
 
 All tools accept an optional `fileKey` parameter when multiple Figma files are connected. Use `list_files` to discover connected files and their keys.
 
@@ -118,13 +125,21 @@ All tools accept an optional `fileKey` parameter when multiple Figma files are c
 - New text nodes default to `Inter Regular` unless a font is provided.
 - `create_image` reads local paths relative to the MCP server working directory unless you pass an absolute path.
 - `import_html_layers` takes a JSON file produced by [html-figma](https://github.com/sergcen/html-to-figma)'s browser `htmlToFigma()`. The path resolves relative to the MCP server working directory and must stay inside it, even when absolute. Everything lands inside one wrapper frame, and the response reports `layerCount` against `expectedLayerCount` so partial imports are visible.
+- Variable writes target a collection's default mode. Adding, renaming, or selecting a mode is not exposed, so a value written here lands in the one mode every collection has.
+- `create_variables`, `update_variables`, `delete_variables`, and `bind_variables` check every item before the first write: a batch with a bad item writes nothing and reports every item to correct. A write that fails afterwards stops the batch — `create_variables` removes the variables that call had created, and the others report `not written` for the items they did not reach.
+- A variable value can alias another variable by `aliasId` or by `aliasName`. In `create_variables` an `aliasName` resolves against the batch first, then the target collection, then the other local collections, so an item can alias a later item of the same call. In `update_variables` it resolves against the file as it stands, not against the renames of the same call.
+- `delete_variable_collection` is gated behind `confirm: true`, like `delete_nodes`, and removes every variable in the collection. `delete_variables` is gated the same way and reports `aliasedBy` for each removed variable: the local variables that aliased it and now resolve to nothing.
+- `bind_variables` binds a COLOR variable into one `SOLID` paint of `fills` or `strokes` — pick it with `paintIndex` — BOOLEAN to `visible`, STRING to `characters`, `fontFamily`, and `fontStyle`, and FLOAT to every other field. Pass `variableId: null` to remove a binding and leave the field at its last value. Variable scopes are not consulted: they steer Figma's variable picker and do not restrict the Plugin API.
+- A FLOAT bound to `opacity` is read as a percentage, the unit Figma's own opacity field uses, not as the 0 to 1 the `opacity` node property takes. A variable holding `50` gives a half-transparent node; one holding `0.5` gives a node that is all but invisible.
 - `create_page` returns the new page's ID — pass it as `parentId` to `create_frame` / `create_text` / `create_shape` / `create_image` to author content on that page without switching the editor.
 
 ### What You Can Build
 
 With the current write surface, an agent can build a basic slide deck in a new empty Figma file: create slide frames, style titles and body copy, lay out rectangles/ellipses/lines for cards and dividers, duplicate slide templates, reparent content into the right frame, and adjust common geometry/visual properties — including solid/gradient paints, shadows and blurs, stroke geometry, and auto-layout configuration.
 
-The current version is intentionally limited — no components/instances, no variables/styles authoring, no per-segment text styling, and no vector boolean operations yet.
+Design tokens are authorable too: define variables in a collection, alias them to each other, and bind them to the layers that should follow them, so a colour or a spacing value changes in one place.
+
+The current version is intentionally limited — no components/instances, no text style authoring, no per-segment text styling, and no vector boolean operations yet.
 
 ## Local development
 
