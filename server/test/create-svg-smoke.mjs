@@ -41,6 +41,13 @@ assert.match(calls.at(-1).params.svgText, /^<svg/);
 assert.equal(calls.at(-1).params.width, 32);
 assert.equal(calls.at(-1).fileKey, "file-a");
 
+const withXmlPreamble = await createSvg({
+  source:
+    '<?xml version="1.0" encoding="UTF-8"?>\n<!-- generated asset -->\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path d="M1 4h6"/></svg>',
+});
+assert.equal(withXmlPreamble.isError, undefined);
+assert.match(calls.at(-1).params.svgText, /^<\?xml/);
+
 const fromFile = await createSvg({
   source: "test/fixtures/simple.svg",
   parentId: "1:2",
@@ -48,6 +55,7 @@ const fromFile = await createSvg({
   y: 20,
 });
 assert.equal(fromFile.isError, undefined);
+assert.match(calls.at(-1).params.svgText, /^<\?xml/);
 assert.match(calls.at(-1).params.svgText, /<path/);
 assert.equal(calls.at(-1).params.parentId, "1:2");
 

@@ -753,11 +753,24 @@ function resolveAndValidateOutputPath(outputPath: string, workspaceRoot: string)
   return resolvedPath;
 }
 
+/**
+ * Checks whether text has an SVG document root after an optional UTF-8 BOM,
+ * XML declaration, and leading XML comments.
+ */
+function hasSvgRoot(source: string): boolean {
+  return /^(?:\uFEFF)?\s*(?:<\?xml[\s\S]*?\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg(?:\s|>)/i.test(
+    source
+  );
+}
+
+/**
+ * Resolves inline SVG markup or reads a workspace-contained SVG file and
+ * validates its size and document root before forwarding it to Figma.
+ */
 async function loadSvgSource(source: string, workspaceRoot: string): Promise<string> {
-  const inline = source.trimStart();
   let svgText: string;
 
-  if (/^<svg(?:\s|>)/i.test(inline)) {
+  if (hasSvgRoot(source)) {
     svgText = source;
   } else {
     const resolvedRoot = await realpath(path.resolve(workspaceRoot));
@@ -789,7 +802,7 @@ async function loadSvgSource(source: string, workspaceRoot: string): Promise<str
   if (Buffer.byteLength(svgText, "utf8") > MAX_SVG_BYTES) {
     throw new Error("SVG source exceeds the " + MAX_SVG_BYTES + " byte bridge limit");
   }
-  if (!/^<svg(?:\s|>)/i.test(svgText.trimStart())) {
+  if (!hasSvgRoot(svgText)) {
     throw new Error("SVG source must begin with an <svg> element");
   }
   return svgText;

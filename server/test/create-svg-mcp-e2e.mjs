@@ -35,7 +35,7 @@ try {
       width: 96,
       height: 96,
       source:
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="#C9B48A" stroke-width="2"/><path d="M7 12h10" stroke="#C9B48A" stroke-width="2"/></svg>',
+        '<?xml version="1.0" encoding="UTF-8"?>\n<!-- live preamble smoke -->\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="#C9B48A" stroke-width="2"/><path d="M7 12h10" stroke="#C9B48A" stroke-width="2"/></svg>',
     },
   });
   if (result.isError) {
