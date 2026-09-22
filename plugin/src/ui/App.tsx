@@ -65,8 +65,17 @@ export default function App() {
     fileKey: "",
     selectionCount: 0,
   });
+  const [tokenInput, setTokenInput] = useState("");
+  const [hasToken, setHasToken] = useState(false);
+  const [tokenFeedback, setTokenFeedback] = useState("");
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<number | null>(null);
+
+  const sendToServer = (payload: Record<string, unknown>) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify(payload));
+    }
+  };
 
   const statusLabel = useMemo(
     () => (connected ? "WebSocket Connected" : "Disconnected"),
@@ -97,6 +106,23 @@ export default function App() {
         return;
       }
 
+      if (msg.type === "access-token-status") {
+        setHasToken(msg.payload?.hasToken === true);
+        if (typeof msg.payload?.error === "string" && msg.payload.error) {
+          setTokenFeedback(msg.payload.error);
+        }
+        return;
+      }
+
+      if (msg.type === "sync-access-token") {
+        // Forward the stored token to the MCP server (proves nothing back).
+        const token = msg.payload?.token;
+        if (typeof token === "string" && token.length > 0) {
+          sendToServer({ type: "set_access_token", token });
+        }
+        return;
+      }
+
       if (!("requestId" in msg)) {
         return;
       }
@@ -111,10 +137,30 @@ export default function App() {
     // The main thread reads the persisted state asynchronously, so ask for it
     // on mount rather than relying on a broadcast we may have missed.
     parent.postMessage({ pluginMessage: { type: "request-ui-state" } }, "*");
+    parent.postMessage({ pluginMessage: { type: "request-token-status" } }, "*");
     return () => {
       window.removeEventListener("message", handleMessage);
     };
   }, []);
+
+  const saveToken = () => {
+    const token = tokenInput.trim();
+    if (!token) {
+      setTokenFeedback("Paste a Figma personal access token first.");
+      return;
+    }
+    parent.postMessage({ pluginMessage: { type: "save-access-token", token } }, "*");
+    sendToServer({ type: "set_access_token", token });
+    setTokenInput("");
+    setTokenFeedback("Token saved on this machine.");
+  };
+
+  const clearToken = () => {
+    parent.postMessage({ pluginMessage: { type: "clear-access-token" } }, "*");
+    sendToServer({ type: "set_access_token", token: "" });
+    setTokenInput("");
+    setTokenFeedback("Token removed.");
+  };
 
   const toggleCollapsed = () => {
     setCollapsed((previous) => {
@@ -228,6 +274,35 @@ export default function App() {
             <span className="info-label">Selection:</span>
             <span className="info-value">{status.selectionCount} node(s)</span>
           </div>
+          <div className="info-row">
+            <span className="info-label">API token:</span>
+            <span className="info-value">{hasToken ? "saved" : "not set"}</span>
+          </div>
+        </div>
+
+        <div className="token-section">
+          <input
+            type="password"
+            className="token-input"
+            placeholder="Figma personal access token"
+            value={tokenInput}
+            onChange={(e) => setTokenInput(e.target.value)}
+            aria-label="Figma personal access token"
+          />
+          <div className="token-actions">
+            <button type="button" className="token-button" onClick={saveToken}>
+              Save
+            </button>
+            <button
+              type="button"
+              className="token-button secondary"
+              onClick={clearToken}
+              disabled={!hasToken && tokenInput.length === 0}
+            >
+              Remove
+            </button>
+          </div>
+          {tokenFeedback && <div className="token-feedback">{tokenFeedback}</div>}
         </div>
 
         <div className="footer">

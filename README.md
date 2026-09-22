@@ -122,6 +122,18 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 
 All tools accept an optional `fileKey` parameter when multiple Figma files are connected. Use `list_files` to discover connected files and their keys.
 
+### Comments Notes
+
+The Figma Plugin API cannot read file comments, so `get_comments` and `get_selection_comments` call the Figma REST API (`GET /v1/files/:key/comments`) directly from the MCP server:
+
+- Provide a personal access token with `file_comments:read` scope in either of two ways (the token saved in the plugin wins for its file, otherwise `FIGMA_ACCESS_TOKEN` is used):
+  - **Plugin UI (easiest):** paste the token into the API token field in the running plugin window and press Save. It is stored via `figma.clientStorage` on your machine only, survives restarts, and can be replaced (Save again) or removed (Remove) at any time.
+  - **Environment:** set `FIGMA_ACCESS_TOKEN` (`FIGMA_TOKEN` is accepted as an alias) in the MCP server environment.
+- Pass the real file key from the Figma file URL (`https://www.figma.com/design/<fileKey>/...`). When a single file is connected the bridge reuses its key automatically.
+- `get_comments` accepts optional `nodeIds` to read a frame's comments (replies included), plus `includeResolved` (default `true`), `limit` (default `50`), and `asMd`.
+- `get_selection_comments` resolves the live plugin selection first, then returns the matching threads — useful for "what did reviewers say about these frames?".
+- The plugin manifest enables `enablePrivatePluginApi` so `figma.fileKey` reports the real key for saved files. Unsaved files still need an explicit `fileKey`.
+
 ### Editing Notes
 
 - Edit tools work only when the plugin is opened in Figma's design editor (Dev Mode is read-only — they will return a clear error there).

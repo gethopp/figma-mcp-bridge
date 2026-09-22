@@ -55,6 +55,22 @@ export class Node {
     return undefined;
   }
 
+  /**
+   * Returns the REST token pushed by the plugin UI for a file, if any.
+   * Only the leader holds plugin connections — followers return undefined
+   * and should forward the call to the leader over RPC instead.
+   * @param fileKey - Explicit file key, if any.
+   * @returns The stored token, or undefined.
+   */
+  getFileToken(fileKey?: string): string | undefined {
+    if (this._role !== Role.Leader || !this.leader) return undefined;
+    const bridge = this.leader.getBridge();
+    if (fileKey) return bridge.getFileToken(fileKey);
+    const files = bridge.listConnectedFiles();
+    if (files.length === 1) return bridge.getFileToken(files[0].fileKey);
+    return undefined;
+  }
+
   async becomeLeader(): Promise<void> {
     if (this._role === Role.Leader) return;
 
