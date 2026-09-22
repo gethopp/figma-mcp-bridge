@@ -1,0 +1,13 @@
+# Normalize every text file to LF in the repository and in the working tree.
+# Without this, a Windows checkout with core.autocrlf=true gets CRLF on disk and
+# `prettier --check` (endOfLine: "lf") fails on files nobody touched.
+* text=auto eol=lf
+
+# Binary assets git should never convert.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

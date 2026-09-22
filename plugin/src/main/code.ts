@@ -1,10 +1,12 @@
 import { serializeNode } from "./serializer";
+import type { SerializableNode } from "./serializer";
 import { addLayersToFrame } from "../html-figma/figma";
 
 type RequestType =
   | "get_document"
   | "get_selection"
   | "get_node"
+  | "get_layout_tree"
   | "get_styles"
   | "get_metadata"
   | "get_design_context"
@@ -368,6 +370,59 @@ const requireEditorMode = (toolName: RequestType): void => {
   }
 };
 
+/** Read-only geometry, deliberately independent of screenshot export. */
+async function getLayoutTree(rootId: string, maxNodes = 2000) {
+  const root = await figma.getNodeByIdAsync(rootId);
+  if (!root || root.type === "DOCUMENT" || root.type === "PAGE")
+    throw new Error("Scene root required");
+  const nodes: unknown[] = [];
+  let truncated = false;
+  function visit(node: SceneNode, depth: number) {
+    if (nodes.length >= maxNodes || depth > 100) {
+      truncated = true;
+      return;
+    }
+    nodes.push({
+      id: node.id,
+      parentId: node.parent?.id,
+      name: node.name,
+      type: node.type,
+      visible: node.visible,
+      localSize: { width: node.width, height: node.height },
+      absoluteTransform: node.absoluteTransform,
+      absoluteBoundingBox: node.absoluteBoundingBox,
+      absoluteRenderBounds: node.absoluteRenderBounds,
+      clipsContent: "clipsContent" in node ? node.clipsContent : false,
+    });
+    if ("children" in node) for (const child of node.children) visit(child, depth + 1);
+  }
+  visit(root, 0);
+  return {
+    schemaVersion: 1,
+    snapshotId: new Date().toISOString(),
+    atomicWithScreenshot: false,
+    fileKey: figma.fileKey ?? null,
+    fileName: figma.root.name,
+    pageId: figma.currentPage.id,
+    rootId,
+    truncated,
+    nodes,
+    capture: {
+      coordinateSpace: "document-absolute",
+      window: root.absoluteBoundingBox,
+      exportSettings: {
+        format: "PNG",
+        contentsOnly: true,
+        useAbsoluteBounds: true,
+        constraint: { type: "SCALE", value: 1 },
+      },
+      dimensionsAreMeasuredFromImage: false,
+      clipping:
+        "Rectangles are layout AABBs; ancestor masks and painted visibility are not evaluated.",
+    },
+  };
+}
+
 const handleRequest = async (request: ServerRequest): Promise<PluginResponse> => {
   try {
     if (EDIT_REQUEST_TYPES.has(request.type)) {
@@ -386,6 +441,15 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           requestId: request.requestId,
           data: figma.currentPage.selection.map((node) => serializeNode(node)),
         };
+      case "get_layout_tree": {
+        const rootId = request.nodeIds?.[0];
+        if (!rootId) throw new Error("rootId is required");
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await getLayoutTree(rootId, Number(request.params?.maxNodes ?? 2000)),
+        };
+      }
       case "get_node": {
         const nodeId = request.nodeIds && request.nodeIds[0];
         if (!nodeId) {
@@ -458,7 +522,7 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
       case "get_design_context": {
         const depth = typeof request.params?.depth === "number" ? request.params.depth : 2;
         const serializeWithDepth = async (
-          node: unknown,
+          node: SerializableNode,
           currentDepth: number
         ): Promise<ReturnType<typeof serializeNode>> => {
           const serialized = serializeNode(node);
@@ -496,7 +560,7 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
         const contextNodes =
           selection.length > 0
             ? await Promise.all(selection.map((node) => serializeWithDepth(node, 0)))
-            : [await serializeWithDepth(figma.currentPage as unknown as SceneNode, 0)];
+            : [await serializeWithDepth(figma.currentPage, 0)];
 
         return {
           type: request.type,
@@ -808,7 +872,7 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
 
         if (typeof params.x === "number" || typeof params.y === "number") {
           if (!("x" in node) || !("y" in node)) {
-            throw new Error(`Node does not support x/y positioning: ${node.id}`);
+            throw new Error(`Node does not support x/y positioning: ${nodeId}`);
           }
           positionNode(node, params.x, params.y);
           applied.x = node.x;
@@ -841,8 +905,9 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           if (!("cornerRadius" in node)) {
             throw new Error(`Node does not support cornerRadius: ${node.id}`);
           }
-          node.cornerRadius = params.cornerRadius;
-          applied.cornerRadius = node.cornerRadius;
+          const cornerNode = node as CornerMixin;
+          cornerNode.cornerRadius = params.cornerRadius;
+          applied.cornerRadius = cornerNode.cornerRadius;
         }
 
         return {
@@ -1341,8 +1406,11 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
         }
 
         if (typeof params.strokeHex === "string") {
+          // Captured before the guard: every shape created above has `strokes`,
+          // so TypeScript narrows `node` to `never` inside it.
+          const shapeId = node.id;
           if (!("strokes" in node)) {
-            throw new Error(`Node does not support strokes: ${node.id}`);
+            throw new Error(`Node does not support strokes: ${shapeId}`);
           }
           const strokeOpacity =
             typeof params.strokeOpacity === "number" ? params.strokeOpacity : undefined;

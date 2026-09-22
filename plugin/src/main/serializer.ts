@@ -198,7 +198,7 @@ const serializeLetterSpacing = (letterSpacing: LetterSpacing | symbol) => {
   return { value: letterSpacing.value, unit: letterSpacing.unit };
 };
 
-const getBounds = (node: SceneNode): SerializedBounds | undefined => {
+const getBounds = (node: SerializableNode): SerializedBounds | undefined => {
   if ("x" in node && "y" in node && "width" in node && "height" in node) {
     return {
       x: node.x,
@@ -239,7 +239,7 @@ const serializeText = (node: TextNode, base: SerializedNode) => {
   };
 };
 
-const serializeStyles = (node: SceneNode): SerializedStyles => {
+const serializeStyles = (node: SerializableNode): SerializedStyles => {
   const styles: SerializedStyles = {};
 
   if ("opacity" in node) {
@@ -346,7 +346,14 @@ const serializeStyles = (node: SceneNode): SerializedStyles => {
   return styles;
 };
 
-export const serializeNode = (node: SceneNode): SerializedNode => {
+/**
+ * `serializeNode` is also called with the current page (get_document,
+ * get_design_context), which shares the id/name/type/children surface it reads.
+ * Every property beyond that is read behind an `in` check.
+ */
+export type SerializableNode = SceneNode | PageNode;
+
+export const serializeNode = (node: SerializableNode): SerializedNode => {
   const base: SerializedNode = {
     id: node.id,
     name: node.name,
