@@ -6,8 +6,8 @@
   "ui": "dist/index.html",
   "permissions": [],
   "networkAccess": {
-    "allowedDomains": ["ws://localhost:1994"],
-    "reasoning": "Connects to local MCP server via WebSocket to stream Figma document data to AI tools"
+    "allowedDomains": ["ws://localhost:1994", "https://api.figma.com"],
+    "reasoning": "Connects to local MCP server via WebSocket to stream Figma document data to AI tools, and validates the user-provided Figma personal access token against the Figma REST API"
   },
   "documentAccess": "dynamic-page",
   "editorType": ["figma", "dev"],

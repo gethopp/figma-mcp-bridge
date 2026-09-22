@@ -68,12 +68,53 @@ export default function App() {
   const [tokenInput, setTokenInput] = useState("");
   const [hasToken, setHasToken] = useState(false);
   const [tokenFeedback, setTokenFeedback] = useState("");
+  const [showToken, setShowToken] = useState(false);
+  const [tokenValid, setTokenValid] = useState<boolean | null>(null);
+  const [checkingToken, setCheckingToken] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<number | null>(null);
 
   const sendToServer = (payload: Record<string, unknown>) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify(payload));
+    }
+  };
+
+  /**
+   * Checks a token against the Figma REST API (`GET /v1/me`).
+   * @param token - Personal access token to verify (never stored here).
+   * @param isStoredCheck - True when checking the saved token vs. typed input.
+   */
+  const checkTokenValidity = async (token: string, isStoredCheck: boolean): Promise<boolean> => {
+    setCheckingToken(true);
+    setTokenValid(null);
+    try {
+      const response = await fetch("https://api.figma.com/v1/me", {
+        headers: { "X-Figma-Token": token },
+      });
+      if (response.ok) {
+        const me = (await response.json().catch(() => null)) as { handle?: unknown } | null;
+        const handle = typeof me?.handle === "string" && me.handle ? ` (${me.handle})` : "";
+        setTokenValid(true);
+        setTokenFeedback(
+          isStoredCheck ? `Saved token is valid${handle}.` : `Token is valid${handle}.`
+        );
+        return true;
+      }
+      if (response.status === 401 || response.status === 403) {
+        setTokenValid(false);
+        setTokenFeedback("Token is invalid — check the value and save again.");
+        return false;
+      }
+      setTokenValid(null);
+      setTokenFeedback(`Could not verify (Figma returned ${response.status}); saved anyway.`);
+      return true;
+    } catch {
+      setTokenValid(null);
+      setTokenFeedback("Could not reach Figma to verify; saved anyway.");
+      return true;
+    } finally {
+      setCheckingToken(false);
     }
   };
 
@@ -123,6 +164,15 @@ export default function App() {
         return;
       }
 
+      if (msg.type === "validate-access-token") {
+        // One-off validity check of the stored token; value is discarded after.
+        const token = msg.payload?.token;
+        if (typeof token === "string" && token.length > 0) {
+          void checkTokenValidity(token, true);
+        }
+        return;
+      }
+
       if (!("requestId" in msg)) {
         return;
       }
@@ -143,22 +193,31 @@ export default function App() {
     };
   }, []);
 
-  const saveToken = () => {
+  const saveToken = async () => {
     const token = tokenInput.trim();
     if (!token) {
       setTokenFeedback("Paste a Figma personal access token first.");
       return;
     }
+    const valid = await checkTokenValidity(token, false);
+    if (!valid) return;
     parent.postMessage({ pluginMessage: { type: "save-access-token", token } }, "*");
     sendToServer({ type: "set_access_token", token });
     setTokenInput("");
-    setTokenFeedback("Token saved on this machine.");
+    setTokenValid(true);
+    setTokenFeedback("Token verified and saved on this machine.");
+  };
+
+  const checkSavedToken = () => {
+    setTokenFeedback("Checking saved token…");
+    parent.postMessage({ pluginMessage: { type: "request-token-for-validation" } }, "*");
   };
 
   const clearToken = () => {
     parent.postMessage({ pluginMessage: { type: "clear-access-token" } }, "*");
     sendToServer({ type: "set_access_token", token: "" });
     setTokenInput("");
+    setTokenValid(null);
     setTokenFeedback("Token removed.");
   };
 
@@ -281,17 +340,68 @@ export default function App() {
         </div>
 
         <div className="token-section">
-          <input
-            type="password"
-            className="token-input"
-            placeholder="Figma personal access token"
-            value={tokenInput}
-            onChange={(e) => setTokenInput(e.target.value)}
-            aria-label="Figma personal access token"
-          />
+          <div className="token-input-row">
+            <input
+              type={showToken ? "text" : "password"}
+              className="token-input"
+              placeholder="Figma personal access token"
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              aria-label="Figma personal access token"
+            />
+            <button
+              type="button"
+              className="token-visibility"
+              onClick={() => setShowToken((previous) => !previous)}
+              title={showToken ? "Hide token" : "Show token"}
+              aria-label={showToken ? "Hide token" : "Show token"}
+              aria-pressed={showToken}
+            >
+              {showToken ? (
+                <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M2 8s2.5-4.5 6-4.5S14 8 14 8s-2.5 4.5-6 4.5S2 8 2 8Z"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  />
+                  <circle cx="8" cy="8" r="2" fill="currentColor" />
+                  <path
+                    d="M3 13 13 3"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M2 8s2.5-4.5 6-4.5S14 8 14 8s-2.5 4.5-6 4.5S2 8 2 8Z"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  />
+                  <circle cx="8" cy="8" r="2" fill="currentColor" />
+                </svg>
+              )}
+            </button>
+          </div>
           <div className="token-actions">
-            <button type="button" className="token-button" onClick={saveToken}>
+            <button
+              type="button"
+              className="token-button"
+              onClick={saveToken}
+              disabled={checkingToken}
+            >
               Save
+            </button>
+            <button
+              type="button"
+              className="token-button secondary"
+              onClick={checkSavedToken}
+              disabled={!hasToken || checkingToken}
+            >
+              {checkingToken ? "Checking…" : "Check"}
             </button>
             <button
               type="button"
@@ -302,7 +412,14 @@ export default function App() {
               Remove
             </button>
           </div>
-          {tokenFeedback && <div className="token-feedback">{tokenFeedback}</div>}
+          {tokenFeedback && (
+            <div
+              className={`token-feedback ${tokenValid === true ? "valid" : tokenValid === false ? "invalid" : ""}`}
+            >
+              {tokenValid === true ? "✓ " : tokenValid === false ? "✕ " : ""}
+              {tokenFeedback}
+            </div>
+          )}
         </div>
 
         <div className="footer">

@@ -2019,6 +2019,21 @@ figma.ui.onmessage = async (message) => {
     return;
   }
 
+  if (message.type === "request-token-for-validation") {
+    // Sends the stored token back to the UI for a one-off validity check.
+    // Same-machine only; the UI discards it after checking.
+    const stored = await figma.clientStorage.getAsync(ACCESS_TOKEN_KEY).catch(() => null);
+    if (typeof stored === "string" && stored.length > 0) {
+      figma.ui.postMessage({ type: "validate-access-token", payload: { token: stored } });
+    } else {
+      figma.ui.postMessage({
+        type: "access-token-status",
+        payload: { hasToken: false, error: "No token saved yet." },
+      });
+    }
+    return;
+  }
+
   if (message.type === "set-ui-collapsed") {
     uiCollapsed = message.collapsed === true;
     applyUiSize();
