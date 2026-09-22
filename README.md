@@ -75,6 +75,8 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `get_metadata`                 | Get file name, pages, and current page info                                                              |
 | `get_design_context`           | Get a depth-limited tree optimized for understanding design context                                      |
 | `get_variable_defs`            | Get all variable collections, modes, and values (design tokens)                                          |
+| `get_comments`                 | Get file comments via REST API, optionally filtered by frame/node IDs                                    |
+| `get_selection_comments`       | Get comments pinned to the currently selected frames/nodes                                               |
 | `get_screenshot`               | Export nodes as PNG/SVG/JPG/PDF (base64-encoded)                                                         |
 | `save_screenshots`             | Export and save screenshots directly to the local filesystem                                             |
 | `get_motion_styles`            | List all available animation presets (beta)                                                              |
