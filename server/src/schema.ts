@@ -632,6 +632,54 @@ export const toolInputSchemas = {
     fileKey: fileKeyField,
   }),
 
+  get_comments: z.object({
+    fileKey: fileKeyField.describe(
+      "Figma file key (from the file URL). When omitted and a single file is connected, that file is used."
+    ),
+    nodeIds: z
+      .array(createFigmaNodeIdSchema())
+      .optional()
+      .describe(
+        "Optional frame/node IDs to filter by (e.g. ['4029:12345']). Only comments pinned to these nodes (plus their replies) are returned. Omit to get all comments."
+      ),
+    includeResolved: z
+      .boolean()
+      .optional()
+      .describe("Include resolved comments (default true). Pass false for open threads only."),
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .max(200)
+      .optional()
+      .describe("Max comments to return after filtering (default 50, max 200)"),
+    asMd: z
+      .boolean()
+      .optional()
+      .describe("Return comment bodies as markdown equivalents (default false)"),
+  }),
+
+  get_selection_comments: z.object({
+    fileKey: fileKeyField.describe(
+      "Figma file key (from the file URL). When omitted and a single file is connected, that file is used."
+    ),
+    includeResolved: z
+      .boolean()
+      .optional()
+      .describe("Include resolved comments (default true). Pass false for open threads only."),
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .max(200)
+      .optional()
+      .describe("Max comments to return after filtering (default 50, max 200)"),
+    asMd: z
+      .boolean()
+      .optional()
+      .describe("Return comment bodies as markdown equivalents (default false)"),
+  }),
+
   get_screenshot: z.object({
     nodeIds: z
       .array(createFigmaNodeIdSchema())
@@ -925,6 +973,8 @@ const rpcToArgs: Record<
   get_metadata: (_nodeIds, params) => ({ ...params }),
   get_design_context: (_nodeIds, params) => ({ ...params }),
   get_variable_defs: (_nodeIds, params) => ({ ...params }),
+  get_comments: (_nodeIds, params) => ({ ...params }),
+  get_selection_comments: (_nodeIds, params) => ({ ...params }),
   get_screenshot: (nodeIds, params) => ({ nodeIds, ...params }),
   set_node_visibility: (_nodeIds, params) => ({ ...params }),
   set_text_content: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),

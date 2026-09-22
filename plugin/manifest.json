@@ -11,5 +11,6 @@
   },
   "documentAccess": "dynamic-page",
   "editorType": ["figma", "dev"],
-  "capabilities": ["inspect"]
+  "capabilities": ["inspect"],
+  "enablePrivatePluginApi": true
 }
