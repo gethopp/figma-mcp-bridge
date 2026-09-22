@@ -198,19 +198,33 @@ export function registerTools(server: McpServer, node: Node, port: number): void
 
   server.tool(
     "get_comments",
-    "Get Figma file comments via the REST API (the plugin sandbox cannot read comments). Filter by frame/node IDs to read a frame's comments, or omit nodeIds for all comments. Requires FIGMA_ACCESS_TOKEN with file_comments:read scope. When multiple files are connected, specify fileKey.",
+    "Get Figma file comments via the REST API (the plugin sandbox cannot read comments). Filter by frame/node IDs to read a frame's comments, or omit nodeIds for all comments. Needs a personal access token with file_comments:read scope — save it in the plugin UI's API token field or set FIGMA_ACCESS_TOKEN. When multiple files are connected, specify fileKey.",
     toolInputSchemas.get_comments.shape,
     async ({ fileKey, nodeIds, includeResolved, limit, asMd }): Promise<ToolResult> => {
       try {
+        // Followers hold no plugin connections/tokens — the leader executes.
+        if (node.listConnectedFiles() === undefined) {
+          return renderResponse(() =>
+            node.sendWithParams(
+              "get_comments",
+              undefined,
+              { nodeIds, includeResolved, limit, asMd },
+              fileKey
+            )
+          );
+        }
         const files = await listFilesForComments(node, port);
         const resolvedKey = resolveCommentsFileKey(files, fileKey);
-        const result = await getComments({
-          fileKey: resolvedKey,
-          nodeIds,
-          includeResolved,
-          limit,
-          asMd,
-        });
+        const result = await getComments(
+          {
+            fileKey: resolvedKey,
+            nodeIds,
+            includeResolved,
+            limit,
+            asMd,
+          },
+          node.getFileToken(resolvedKey)
+        );
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };
@@ -230,10 +244,21 @@ export function registerTools(server: McpServer, node: Node, port: number): void
 
   server.tool(
     "get_selection_comments",
-    "Get Figma comments pinned to the currently selected frames/nodes. Resolves the live selection via the plugin, then returns matching comment threads via the REST API. Requires FIGMA_ACCESS_TOKEN with file_comments:read scope. When multiple files are connected, specify fileKey.",
+    "Get Figma comments pinned to the currently selected frames/nodes. Resolves the live selection via the plugin, then returns matching comment threads via the REST API. Needs a personal access token with file_comments:read scope — save it in the plugin UI's API token field or set FIGMA_ACCESS_TOKEN. When multiple files are connected, specify fileKey.",
     toolInputSchemas.get_selection_comments.shape,
     async ({ fileKey, includeResolved, limit, asMd }): Promise<ToolResult> => {
       try {
+        // Followers hold no plugin connections/tokens — the leader executes.
+        if (node.listConnectedFiles() === undefined) {
+          return renderResponse(() =>
+            node.sendWithParams(
+              "get_selection_comments",
+              undefined,
+              { includeResolved, limit, asMd },
+              fileKey
+            )
+          );
+        }
         const files = await listFilesForComments(node, port);
         const resolvedKey = resolveCommentsFileKey(files, fileKey);
         const selectionIds = await getSelectionNodeIds(node, files, fileKey);
@@ -252,13 +277,16 @@ export function registerTools(server: McpServer, node: Node, port: number): void
             ],
           };
         }
-        const result = await getComments({
-          fileKey: resolvedKey,
-          nodeIds: selectionIds,
-          includeResolved,
-          limit,
-          asMd,
-        });
+        const result = await getComments(
+          {
+            fileKey: resolvedKey,
+            nodeIds: selectionIds,
+            includeResolved,
+            limit,
+            asMd,
+          },
+          node.getFileToken(resolvedKey)
+        );
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };

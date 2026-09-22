@@ -96,7 +96,7 @@ export function getCommentsAccessToken(): string {
     "";
   if (!token.trim()) {
     throw new Error(
-      "Figma comments require a personal access token. Set FIGMA_ACCESS_TOKEN (scopes: file_comments:read, files:read) and retry."
+      "Figma comments require a personal access token (scopes: file_comments:read, files:read). Save it in the plugin UI's API token field, or set FIGMA_ACCESS_TOKEN and retry."
     );
   }
   return token.trim();

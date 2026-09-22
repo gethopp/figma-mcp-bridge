@@ -113,6 +113,72 @@ body {
   color: var(--text-value);
 }
 
+.token-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 26px;
+}
+
+.token-input {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-value);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  outline: none;
+}
+
+.token-input::placeholder {
+  color: var(--text-label);
+  opacity: 0.7;
+}
+
+.token-input:focus {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.token-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.token-button {
+  padding: 4px 12px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--bg-primary);
+  background: var(--text-value);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.token-button:hover {
+  opacity: 0.85;
+}
+
+.token-button.secondary {
+  color: var(--text-value);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.token-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.token-feedback {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-label);
+}
+
 .footer {
   display: flex;
   justify-content: space-between;

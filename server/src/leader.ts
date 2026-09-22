@@ -137,13 +137,16 @@ export class Leader {
             }
           }
           try {
-            const result = await getComments({
-              fileKey: resolvedKey,
-              nodeIds,
-              includeResolved: params.includeResolved as boolean | undefined,
-              limit: params.limit as number | undefined,
-              asMd: params.asMd as boolean | undefined,
-            });
+            const result = await getComments(
+              {
+                fileKey: resolvedKey,
+                nodeIds,
+                includeResolved: params.includeResolved as boolean | undefined,
+                limit: params.limit as number | undefined,
+                asMd: params.asMd as boolean | undefined,
+              },
+              this.bridge.getFileToken(resolvedKey)
+            );
             this.sendJSON(res, 200, { data: result });
           } catch (err) {
             this.sendJSON(res, 200, {
