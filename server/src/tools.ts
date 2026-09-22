@@ -754,13 +754,35 @@ function resolveAndValidateOutputPath(outputPath: string, workspaceRoot: string)
 }
 
 /**
- * Checks whether text has an SVG document root after an optional UTF-8 BOM,
- * XML declaration, and leading XML comments.
+ * Checks whether text has an SVG document element after the small XML prolog
+ * subset commonly emitted by vector editors: an optional UTF-8 BOM, XML
+ * declaration, and leading comments.
+ *
+ * XML 1.0 defines a document as a prolog followed by one document element,
+ * with comments allowed in the prolog. SVG 2 defines `svg` as that root
+ * element for a standalone SVG document:
+ * https://www.w3.org/TR/xml/#NT-document
+ * https://www.w3.org/TR/xml/#sec-comments
+ * https://www.w3.org/TR/SVG2/struct.html#SVGElement
  */
 function hasSvgRoot(source: string): boolean {
-  return /^(?:\uFEFF)?\s*(?:<\?xml[\s\S]*?\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg(?:\s|>)/i.test(
-    source
-  );
+  let remainder = source.replace(/^\uFEFF/, "").trimStart();
+
+  if (remainder.startsWith("<?xml")) {
+    const declarationEnd = remainder.indexOf("?>");
+    if (declarationEnd === -1) return false;
+    remainder = remainder.slice(declarationEnd + 2).trimStart();
+  }
+
+  while (remainder.startsWith("<!--")) {
+    const commentEnd = remainder.indexOf("-->");
+    if (commentEnd === -1) return false;
+    remainder = remainder.slice(commentEnd + 3).trimStart();
+  }
+
+  if (!remainder.startsWith("<svg")) return false;
+  const tagNameBoundary = remainder[4];
+  return tagNameBoundary === ">" || tagNameBoundary === "/" || /\s/.test(tagNameBoundary);
 }
 
 /**
