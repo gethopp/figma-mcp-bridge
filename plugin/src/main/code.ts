@@ -1941,12 +1941,17 @@ const postTokenStatus = async () => {
   });
 };
 
-/** Pushes the stored token to the UI so it can forward it to the MCP server. */
+/**
+ * Pushes the stored token to the UI so it can forward it to the MCP server.
+ * Always forwards (empty string clears the server copy) so a removal while
+ * the socket was down still takes effect on the next reconnect.
+ */
 const syncTokenToServer = async () => {
   const stored = await figma.clientStorage.getAsync(ACCESS_TOKEN_KEY).catch(() => null);
-  if (typeof stored === "string" && stored.length > 0) {
-    figma.ui.postMessage({ type: "sync-access-token", payload: { token: stored } });
-  }
+  figma.ui.postMessage({
+    type: "sync-access-token",
+    payload: { token: typeof stored === "string" ? stored : "" },
+  });
 };
 
 // Start hidden so the window never flashes at full height before the stored
@@ -2002,9 +2007,20 @@ figma.ui.onmessage = async (message) => {
       });
       return;
     }
-    await figma.clientStorage.setAsync(ACCESS_TOKEN_KEY, token).catch(() => {
-      // Persisting is best-effort; still sync the in-memory value below.
-    });
+    const persisted = await figma.clientStorage
+      .setAsync(ACCESS_TOKEN_KEY, token)
+      .then(() => true)
+      .catch(() => false);
+    if (!persisted) {
+      figma.ui.postMessage({
+        type: "access-token-status",
+        payload: {
+          hasToken: false,
+          error: "Could not save the token on this machine — storage unavailable.",
+        },
+      });
+      return;
+    }
     await postTokenStatus();
     // Echo back so the UI can forward it to the MCP server over its socket.
     figma.ui.postMessage({ type: "sync-access-token", payload: { token } });
@@ -2012,9 +2028,20 @@ figma.ui.onmessage = async (message) => {
   }
 
   if (message.type === "clear-access-token") {
-    await figma.clientStorage.deleteAsync(ACCESS_TOKEN_KEY).catch(() => {
-      // Best-effort; the status post below reflects the intent.
-    });
+    const removed = await figma.clientStorage
+      .deleteAsync(ACCESS_TOKEN_KEY)
+      .then(() => true)
+      .catch(() => false);
+    if (!removed) {
+      figma.ui.postMessage({
+        type: "access-token-status",
+        payload: {
+          hasToken: true,
+          error: "Could not remove the saved token — storage unavailable.",
+        },
+      });
+      return;
+    }
     await postTokenStatus();
     return;
   }

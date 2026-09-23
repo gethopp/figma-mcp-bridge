@@ -64,9 +64,10 @@ export class Leader {
         }
       });
 
-      server.listen(this.port, () => {
+      // Loopback-only: /rpc has no auth, so never expose it beyond this machine.
+      server.listen(this.port, "127.0.0.1", () => {
         this.server = server;
-        console.error(`Leader listening on :${this.port}`);
+        console.error(`Leader listening on 127.0.0.1:${this.port}`);
         resolve();
       });
     });
@@ -110,11 +111,18 @@ export class Leader {
           const resolvedKey = resolveCommentsFileKey(connected, fileKey);
           let nodeIds = params.nodeIds as string[] | undefined;
           if (rpcReq.tool === "get_selection_comments") {
+            // The REST key may differ from the bridge connection key, so look
+            // the selection up with the matching (or sole) connected key.
+            const selectionFileKey = connected.some((file) => file.fileKey === fileKey)
+              ? fileKey
+              : connected.length === 1
+                ? connected[0].fileKey
+                : fileKey;
             const selection = await this.bridge.sendWithParams(
               "get_selection",
               undefined,
               undefined,
-              fileKey ?? (connected.length === 1 ? connected[0].fileKey : undefined)
+              selectionFileKey
             );
             if (selection.error) {
               this.sendJSON(res, 200, { error: selection.error });

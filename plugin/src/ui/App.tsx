@@ -84,8 +84,12 @@ export default function App() {
    * Checks a token against the Figma REST API (`GET /v1/me`).
    * @param token - Personal access token to verify (never stored here).
    * @param isStoredCheck - True when checking the saved token vs. typed input.
+   * @returns True when valid, false when rejected, null when unverifiable.
    */
-  const checkTokenValidity = async (token: string, isStoredCheck: boolean): Promise<boolean> => {
+  const checkTokenValidity = async (
+    token: string,
+    isStoredCheck: boolean
+  ): Promise<boolean | null> => {
     setCheckingToken(true);
     setTokenValid(null);
     try {
@@ -107,12 +111,12 @@ export default function App() {
         return false;
       }
       setTokenValid(null);
-      setTokenFeedback(`Could not verify (Figma returned ${response.status}); saved anyway.`);
-      return true;
+      setTokenFeedback(`Could not verify (Figma returned ${response.status}).`);
+      return null;
     } catch {
       setTokenValid(null);
-      setTokenFeedback("Could not reach Figma to verify; saved anyway.");
-      return true;
+      setTokenFeedback("Could not reach Figma to verify.");
+      return null;
     } finally {
       setCheckingToken(false);
     }
@@ -156,9 +160,11 @@ export default function App() {
       }
 
       if (msg.type === "sync-access-token") {
-        // Forward the stored token to the MCP server (proves nothing back).
+        // Forward the stored token to the MCP server; an empty string clears
+        // the server copy (e.g. after removal while offline).
         const token = msg.payload?.token;
-        if (typeof token === "string" && token.length > 0) {
+        if (typeof token === "string") {
+          setHasToken(token.length > 0);
           sendToServer({ type: "set_access_token", token });
         }
         return;
@@ -200,12 +206,14 @@ export default function App() {
       return;
     }
     const valid = await checkTokenValidity(token, false);
-    if (!valid) return;
+    if (valid === false) return;
     parent.postMessage({ pluginMessage: { type: "save-access-token", token } }, "*");
     sendToServer({ type: "set_access_token", token });
     setTokenInput("");
-    setTokenValid(true);
-    setTokenFeedback("Token verified and saved on this machine.");
+    setTokenValid(valid);
+    setTokenFeedback(
+      valid ? "Token verified and saved on this machine." : "Token saved without verification."
+    );
   };
 
   const checkSavedToken = () => {
