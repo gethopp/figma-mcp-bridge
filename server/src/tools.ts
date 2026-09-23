@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { lookup } from "node:dns/promises";
-import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import type { Stats } from "node:fs";
+import { mkdir, open, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import path from "node:path";
 import type { z } from "zod";
@@ -793,6 +794,20 @@ function hasSvgRoot(source: string): boolean {
   return tagNameBoundary === ">" || tagNameBoundary === "/" || /\s/.test(tagNameBoundary);
 }
 
+/** Returns true when candidate is the root itself or a descendant of it. */
+function isPathInside(candidate: string, root: string): boolean {
+  const relativePath = path.relative(root, candidate);
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+/**
+ * Compares filesystem identities rather than path strings. Node exposes the
+ * device and inode/file-index values through Stats on both POSIX and Windows.
+ */
+function isSameFile(opened: Stats, current: Stats): boolean {
+  return opened.dev === current.dev && opened.ino === current.ino;
+}
+
 /**
  * Resolves inline SVG markup or reads a workspace-contained SVG file and
  * validates its size and document root before forwarding it to Figma.
@@ -805,6 +820,12 @@ async function loadSvgSource(source: string, workspaceRoot: string): Promise<str
   } else {
     const resolvedRoot = await realpath(path.resolve(workspaceRoot));
     const lexicalPath = path.resolve(resolvedRoot, source);
+    if (!isPathInside(lexicalPath, resolvedRoot)) {
+      throw new Error(
+        "SVG source must be inside the MCP server working directory: " + resolvedRoot
+      );
+    }
+
     let resolvedPath: string;
     try {
       resolvedPath = await realpath(lexicalPath);
@@ -812,21 +833,47 @@ async function loadSvgSource(source: string, workspaceRoot: string): Promise<str
       throw new Error("SVG source not found: " + source);
     }
 
-    const relativePath = path.relative(resolvedRoot, resolvedPath);
-    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    if (!isPathInside(resolvedPath, resolvedRoot)) {
       throw new Error(
         "SVG source must be inside the MCP server working directory: " + resolvedRoot
       );
     }
 
-    const info = await stat(resolvedPath);
-    if (!info.isFile()) {
-      throw new Error("SVG source is not a regular file: " + source);
+    // Read and validate through one descriptor. Re-resolving the caller's path
+    // after open and comparing file identities detects a symlink or directory
+    // swap between the containment check and open without relying on
+    // platform-specific openat/openat2 bindings that Node does not expose.
+    const file = await open(resolvedPath, "r");
+    try {
+      const openedInfo = await file.stat();
+      if (!openedInfo.isFile()) {
+        throw new Error("SVG source is not a regular file: " + source);
+      }
+      if (openedInfo.size > MAX_SVG_BYTES) {
+        throw new Error("SVG source exceeds the " + MAX_SVG_BYTES + " byte bridge limit");
+      }
+
+      let currentPath: string;
+      try {
+        currentPath = await realpath(lexicalPath);
+      } catch {
+        throw new Error("SVG source changed while it was being opened: " + source);
+      }
+      if (!isPathInside(currentPath, resolvedRoot)) {
+        throw new Error(
+          "SVG source must be inside the MCP server working directory: " + resolvedRoot
+        );
+      }
+
+      const currentInfo = await stat(currentPath);
+      if (!isSameFile(openedInfo, currentInfo)) {
+        throw new Error("SVG source changed while it was being opened: " + source);
+      }
+
+      svgText = await file.readFile({ encoding: "utf8" });
+    } finally {
+      await file.close();
     }
-    if (info.size > MAX_SVG_BYTES) {
-      throw new Error("SVG source exceeds the " + MAX_SVG_BYTES + " byte bridge limit");
-    }
-    svgText = await readFile(resolvedPath, "utf8");
   }
 
   if (Buffer.byteLength(svgText, "utf8") > MAX_SVG_BYTES) {

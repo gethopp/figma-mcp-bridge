@@ -1508,13 +1508,21 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           throw new Error("svgText is required for create_svg");
         }
 
+        // Validate the destination before creating anything. createNodeFromSvg
+        // immediately inserts a node on the current page, so resolving the
+        // parent afterwards could leave an orphan behind when parentId is bad.
+        const parent =
+          typeof params.parentId === "string"
+            ? await getParentNodeById(params.parentId)
+            : undefined;
+
         const node = figma.createNodeFromSvg(params.svgText);
         if (typeof params.name === "string") {
           node.name = params.name;
         }
 
         resizeNodeIfSupported(node, params.width, params.height);
-        await appendToParentIfProvided(node, params.parentId);
+        parent?.appendChild(node);
         positionNode(node, params.x, params.y);
 
         return {
