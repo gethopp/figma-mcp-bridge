@@ -39,6 +39,8 @@ export class RemoteMcpServer {
   private readonly bridgePort: number;
   private readonly mcpPath: string;
   private readonly sessions = new Map<string, Session>();
+  /** Initializations in flight (reserved but not yet stored). */
+  private pendingInitializations = 0;
   private server: http.Server | null = null;
 
   constructor(node: Node, options: RemoteMcpServerOptions) {
@@ -163,7 +165,7 @@ export class RemoteMcpServer {
       }
 
       this.evictExpiredSessions();
-      if (this.sessions.size >= MAX_SESSIONS) {
+      if (this.sessions.size + this.pendingInitializations >= MAX_SESSIONS) {
         this.sendJson(res, 503, {
           jsonrpc: "2.0",
           error: { code: -32000, message: "Too many active sessions" },
@@ -172,18 +174,33 @@ export class RemoteMcpServer {
         return;
       }
 
-      session = this.createSession();
-      await session.server.connect(session.transport);
+      // Reserve the slot before the first await so a burst of concurrent
+      // initializes cannot overshoot the cap.
+      this.pendingInitializations++;
+      try {
+        session = this.createSession();
+        await session.server.connect(session.transport);
 
-      session.transport.onclose = () => {
-        const id = session?.transport.sessionId;
-        if (id) this.sessions.delete(id);
-        void Promise.resolve(session?.server.close()).catch(() => undefined);
-      };
-    } else {
-      session.lastSeen = Date.now();
+        // Delete-only: closing the server here would recurse, since
+        // server.close() closes the transport, which re-invokes onclose.
+        // The explicit paths (DELETE, eviction, shutdown) close both.
+        session.transport.onclose = () => {
+          const id = session?.transport.sessionId;
+          if (id) this.sessions.delete(id);
+        };
+
+        await session.transport.handleRequest(req, res, body);
+
+        if (session.transport.sessionId) {
+          this.sessions.set(session.transport.sessionId, session);
+        }
+      } finally {
+        this.pendingInitializations--;
+      }
+      return;
     }
 
+    session.lastSeen = Date.now();
     await session.transport.handleRequest(req, res, body);
 
     if (session.transport.sessionId) {

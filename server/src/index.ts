@@ -56,7 +56,10 @@ async function main(): Promise<void> {
   // Loopback by default: the HTTP endpoint has no auth, so remote exposure
   // requires explicitly setting FIGMA_MCP_HTTP_HOST (preferably behind an
   // authenticating proxy, since it serves the full write tool surface).
-  const remoteMcpHost = process.env.FIGMA_MCP_HTTP_HOST ?? "127.0.0.1";
+  // An empty value counts as unset — Node would otherwise bind all interfaces.
+  const rawHttpHost = process.env.FIGMA_MCP_HTTP_HOST;
+  const remoteMcpHost =
+    rawHttpHost !== undefined && rawHttpHost.trim() !== "" ? rawHttpHost.trim() : "127.0.0.1";
   let remoteMcp: RemoteMcpServer | null = null;
 
   if (remoteMcpPort !== null) {
