@@ -21,6 +21,12 @@ export class Bridge {
   private wss: WebSocketServer;
   private connections = new Map<string, ConnectionEntry>();
   private pending = new Map<string, PendingRequest>();
+  /**
+   * Per-file Figma REST tokens pushed by the plugin UI (`set_access_token`).
+   * Used for server-side calls the plugin sandbox cannot make (comments).
+   * Never logged — treat as secrets.
+   */
+  private fileTokens = new Map<string, string>();
   private counter = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -86,12 +92,24 @@ export class Bridge {
 
     ws.on("message", (data) => {
       try {
-        const resp: BridgeResponse = JSON.parse(data.toString());
-        const pending = this.pending.get(resp.requestId);
+        const msg = JSON.parse(data.toString()) as BridgeResponse & {
+          token?: unknown;
+        };
+        // Plugin-initiated notification (no requestId): store/clear the
+        // per-file REST token for server-side calls (comments).
+        if (msg.type === "set_access_token") {
+          if (typeof msg.token === "string" && msg.token.trim().length > 0) {
+            this.fileTokens.set(fileKey, msg.token.trim());
+          } else {
+            this.fileTokens.delete(fileKey);
+          }
+          return;
+        }
+        const pending = this.pending.get(msg.requestId);
         if (pending) {
           clearTimeout(pending.timeout);
-          this.pending.delete(resp.requestId);
-          pending.resolve(resp);
+          this.pending.delete(msg.requestId);
+          pending.resolve(msg);
         }
       } catch {
         console.error("Invalid response from plugin");
@@ -167,6 +185,15 @@ export class Bridge {
       fileKey: entry.fileKey,
       fileName: entry.fileName,
     }));
+  }
+
+  /**
+   * Returns the REST token pushed by the plugin UI for a file, if any.
+   * @param fileKey - File key the token was stored under.
+   * @returns The stored token, or undefined when none was provided.
+   */
+  getFileToken(fileKey: string): string | undefined {
+    return this.fileTokens.get(fileKey);
   }
 
   send(requestType: string, nodeIds?: string[], fileKey?: string): Promise<BridgeResponse> {

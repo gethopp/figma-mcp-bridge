@@ -31,8 +31,9 @@ import {
   setTextPropertiesInput,
   toolInputSchemas,
 } from "./schema.js";
-import type { BridgeResponse } from "./types.js";
+import type { BridgeResponse, ConnectedFile } from "./types.js";
 import { Follower } from "./follower.js";
+import { getComments, resolveCommentsFileKey } from "./comments.js";
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 15_000;
@@ -192,6 +193,114 @@ export function registerTools(server: McpServer, node: Node, port: number): void
     toolInputSchemas.get_variable_defs.shape,
     async ({ fileKey }): Promise<ToolResult> => {
       return renderResponse(() => node.send("get_variable_defs", undefined, fileKey));
+    }
+  );
+
+  server.tool(
+    "get_comments",
+    "Get Figma file comments via the REST API (the plugin sandbox cannot read comments). Filter by frame/node IDs to read a frame's comments, or omit nodeIds for all comments. Needs a personal access token with file_comments:read scope — save it in the plugin UI's API token field or set FIGMA_ACCESS_TOKEN. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_comments.shape,
+    async ({ fileKey, nodeIds, includeResolved, limit, asMd }): Promise<ToolResult> => {
+      try {
+        // Followers hold no plugin connections/tokens — the leader executes.
+        if (node.listConnectedFiles() === undefined) {
+          return renderResponse(() =>
+            node.sendWithParams(
+              "get_comments",
+              undefined,
+              { nodeIds, includeResolved, limit, asMd },
+              fileKey
+            )
+          );
+        }
+        const files = await listFilesForComments(node, port);
+        const resolvedKey = resolveCommentsFileKey(files, fileKey);
+        const result = await getComments(
+          {
+            fileKey: resolvedKey,
+            nodeIds,
+            includeResolved,
+            limit,
+            asMd,
+          },
+          node.getFileToken(resolvedKey)
+        );
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: err instanceof Error ? err.message : String(err),
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "get_selection_comments",
+    "Get Figma comments pinned to the currently selected frames/nodes. Resolves the live selection via the plugin, then returns matching comment threads via the REST API. Needs a personal access token with file_comments:read scope — save it in the plugin UI's API token field or set FIGMA_ACCESS_TOKEN. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_selection_comments.shape,
+    async ({ fileKey, includeResolved, limit, asMd }): Promise<ToolResult> => {
+      try {
+        // Followers hold no plugin connections/tokens — the leader executes.
+        if (node.listConnectedFiles() === undefined) {
+          return renderResponse(() =>
+            node.sendWithParams(
+              "get_selection_comments",
+              undefined,
+              { includeResolved, limit, asMd },
+              fileKey
+            )
+          );
+        }
+        const files = await listFilesForComments(node, port);
+        const resolvedKey = resolveCommentsFileKey(files, fileKey);
+        const selectionIds = await getSelectionNodeIds(node, files, fileKey);
+        if (selectionIds.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  fileKey: resolvedKey,
+                  total: 0,
+                  threads: [],
+                  message: "No nodes selected. Select one or more frames to read their comments.",
+                }),
+              },
+            ],
+          };
+        }
+        const result = await getComments(
+          {
+            fileKey: resolvedKey,
+            nodeIds: selectionIds,
+            includeResolved,
+            limit,
+            asMd,
+          },
+          node.getFileToken(resolvedKey)
+        );
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: err instanceof Error ? err.message : String(err),
+            },
+          ],
+          isError: true,
+        };
+      }
     }
   );
 
@@ -660,6 +769,53 @@ export async function executeSaveScreenshots(
     hasErrors: failed > 0,
     results,
   };
+}
+
+/**
+ * Lists connected files for the comments tools, falling back to the leader
+ * over RPC when running as a follower (mirrors the list_files handler).
+ * @param node - Node coordinator for leader/follower routing.
+ * @param port - Port used for follower-to-leader HTTP calls.
+ * @returns Connected files.
+ */
+async function listFilesForComments(node: Node, port: number): Promise<ConnectedFile[]> {
+  const local = node.listConnectedFiles();
+  if (local !== undefined) return local;
+  const follower = new Follower(`http://localhost:${port}`);
+  return follower.listConnectedFiles();
+}
+
+/**
+ * Resolves the live selection into node IDs, tolerating the case where the
+ * caller passed a real REST fileKey that has no matching bridge connection
+ * (falls back to the single connected file for the selection lookup).
+ * @param node - Node coordinator for leader/follower routing.
+ * @param files - Connected files.
+ * @param fileKey - Requested file key, if any.
+ * @returns Selected node IDs (empty when nothing is selected).
+ */
+async function getSelectionNodeIds(
+  node: Node,
+  files: ConnectedFile[],
+  fileKey?: string
+): Promise<string[]> {
+  let resp: BridgeResponse;
+  try {
+    resp = await node.send("get_selection", undefined, fileKey);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const requestedBridgeKey =
+      files.length === 1 ? undefined : files.find((f) => f.fileKey === fileKey)?.fileKey;
+    if (fileKey && /No plugin connected for fileKey/.test(message)) {
+      resp = await node.send("get_selection", undefined, requestedBridgeKey);
+    } else {
+      throw err;
+    }
+  }
+  if (resp.error) throw new Error(resp.error);
+  const data = resp.data as Array<{ id?: unknown }> | undefined;
+  if (!Array.isArray(data)) return [];
+  return data.filter((n) => typeof n.id === "string").map((n) => n.id as string);
 }
 
 /**

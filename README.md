@@ -75,6 +75,8 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `get_metadata`                 | Get file name, pages, and current page info                                            |
 | `get_design_context`           | Get a depth-limited tree optimized for understanding design context                    |
 | `get_variable_defs`            | Get all variable collections, modes, and values (design tokens)                        |
+| `get_comments`                 | Get file comments via REST API, optionally filtered by frame/node IDs                  |
+| `get_selection_comments`       | Get comments pinned to the currently selected frames/nodes                             |
 | `get_screenshot`               | Export nodes as PNG/SVG/JPG/PDF (base64-encoded)                                       |
 | `save_screenshots`             | Export and save screenshots directly to the local filesystem                           |
 | `get_motion_styles`            | List all available animation presets (beta)                                            |
@@ -108,6 +110,18 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `delete_nodes`                 | Delete nodes with explicit confirmation                                                |
 
 All tools accept an optional `fileKey` parameter when multiple Figma files are connected. Use `list_files` to discover connected files and their keys.
+
+### Comments Notes
+
+The Figma Plugin API cannot read file comments, so `get_comments` and `get_selection_comments` call the Figma REST API (`GET /v1/files/:key/comments`) directly from the MCP server:
+
+- Provide a personal access token with `file_comments:read` scope in either of two ways (the token saved in the plugin wins for its file, otherwise `FIGMA_ACCESS_TOKEN` is used):
+  - **Plugin UI (easiest):** paste the token into the API token field in the running plugin window and press Save. The token is verified against the Figma API before saving (✓ valid / ✕ invalid), stored via `figma.clientStorage` on your machine only, and survives restarts. Use the eye button to show/hide the value while typing, Check to re-verify the saved token, Save again to replace it, or Remove to delete it.
+  - **Environment:** set `FIGMA_ACCESS_TOKEN` (`FIGMA_TOKEN` is accepted as an alias) in the MCP server environment.
+- Pass the real file key from the Figma file URL (`https://www.figma.com/design/<fileKey>/...`). When a single file is connected the bridge reuses its key automatically.
+- `get_comments` accepts optional `nodeIds` to read a frame's comments (replies included), plus `includeResolved` (default `true`), `limit` (default `50`), and `asMd`.
+- `get_selection_comments` resolves the live plugin selection first, then returns the matching threads — useful for "what did reviewers say about these frames?".
+- The plugin manifest enables `enablePrivatePluginApi` so `figma.fileKey` reports the real key for saved files. Unsaved files still need an explicit `fileKey`.
 
 ### Editing Notes
 
@@ -169,6 +183,8 @@ For local development, add the following to your AI tool's MCP config:
 }
 ```
 
+For remote access over HTTP instead of stdio, set `FIGMA_MCP_HTTP_PORT` (and optionally `FIGMA_MCP_HTTP_HOST`, default `127.0.0.1`). The server then also serves the MCP Streamable HTTP endpoint (default path `/mcp`, plus `/health` for checks). The HTTP endpoint has no authentication and serves the full tool surface including writes — only set `FIGMA_MCP_HTTP_HOST=0.0.0.0` on trusted networks, preferably behind an authenticating proxy. If the port is already taken, the server logs a warning and continues with stdio.
+
 ### Code style
 
 The repo is formatted with [Prettier](https://prettier.io) (config in `.prettierrc`). A Husky pre-commit hook runs `lint-staged`, which formats only your staged files, so commits stay formatted automatically. You can also run it manually:
@@ -191,6 +207,7 @@ Figma-MCP-Bridge/
         ├── follower.ts   # Follower: proxies to leader via HTTP
         ├── node.ts       # Dynamic leader/follower role switching
         ├── election.ts   # Leader election & health monitoring
+        ├── remote-mcp.ts # Optional Streamable HTTP endpoint for remote MCP clients
         ├── tools.ts      # MCP tool definitions
         └── types.ts      # Shared types
 ```

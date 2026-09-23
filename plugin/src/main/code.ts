@@ -1916,10 +1916,12 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
 };
 
 const UI_WIDTH = 320;
-const UI_EXPANDED_HEIGHT = 180;
+const UI_EXPANDED_HEIGHT = 264;
 /** Just the status bar: the collapsed ("minimized") window. */
 const UI_COLLAPSED_HEIGHT = 36;
 const UI_COLLAPSED_KEY = "ui-collapsed";
+/** Personal access token for the Figma REST API (comments). Stored on this machine only. */
+const ACCESS_TOKEN_KEY = "figma-access-token";
 
 let uiCollapsed = false;
 
@@ -1929,6 +1931,27 @@ const applyUiSize = () => {
 
 const postUiCollapseState = () => {
   figma.ui.postMessage({ type: "ui-collapse-state", payload: { collapsed: uiCollapsed } });
+};
+
+const postTokenStatus = async () => {
+  const stored = await figma.clientStorage.getAsync(ACCESS_TOKEN_KEY).catch(() => null);
+  figma.ui.postMessage({
+    type: "access-token-status",
+    payload: { hasToken: typeof stored === "string" && stored.length > 0 },
+  });
+};
+
+/**
+ * Pushes the stored token to the UI so it can forward it to the MCP server.
+ * Always forwards (empty string clears the server copy) so a removal while
+ * the socket was down still takes effect on the next reconnect.
+ */
+const syncTokenToServer = async () => {
+  const stored = await figma.clientStorage.getAsync(ACCESS_TOKEN_KEY).catch(() => null);
+  figma.ui.postMessage({
+    type: "sync-access-token",
+    payload: { token: typeof stored === "string" ? stored : "" },
+  });
 };
 
 // Start hidden so the window never flashes at full height before the stored
@@ -1957,11 +1980,84 @@ figma.on("selectionchange", () => {
 figma.ui.onmessage = async (message) => {
   if (message.type === "ui-ready") {
     sendStatus();
+    // Re-sync the stored token on every (re)connect so the server keeps it.
+    await syncTokenToServer();
     return;
   }
 
   if (message.type === "request-ui-state") {
     postUiCollapseState();
+    return;
+  }
+
+  if (message.type === "request-token-status") {
+    await postTokenStatus();
+    return;
+  }
+
+  if (message.type === "save-access-token") {
+    const token = typeof message.token === "string" ? message.token.trim() : "";
+    if (!token) {
+      figma.ui.postMessage({
+        type: "access-token-status",
+        payload: {
+          hasToken: false,
+          error: "Token is empty — paste a Figma personal access token.",
+        },
+      });
+      return;
+    }
+    const persisted = await figma.clientStorage
+      .setAsync(ACCESS_TOKEN_KEY, token)
+      .then(() => true)
+      .catch(() => false);
+    if (!persisted) {
+      figma.ui.postMessage({
+        type: "access-token-status",
+        payload: {
+          hasToken: false,
+          error: "Could not save the token on this machine — storage unavailable.",
+        },
+      });
+      return;
+    }
+    await postTokenStatus();
+    // Echo back so the UI can forward it to the MCP server over its socket.
+    figma.ui.postMessage({ type: "sync-access-token", payload: { token } });
+    return;
+  }
+
+  if (message.type === "clear-access-token") {
+    const removed = await figma.clientStorage
+      .deleteAsync(ACCESS_TOKEN_KEY)
+      .then(() => true)
+      .catch(() => false);
+    if (!removed) {
+      figma.ui.postMessage({
+        type: "access-token-status",
+        payload: {
+          hasToken: true,
+          error: "Could not remove the saved token — storage unavailable.",
+        },
+      });
+      return;
+    }
+    await postTokenStatus();
+    return;
+  }
+
+  if (message.type === "request-token-for-validation") {
+    // Sends the stored token back to the UI for a one-off validity check.
+    // Same-machine only; the UI discards it after checking.
+    const stored = await figma.clientStorage.getAsync(ACCESS_TOKEN_KEY).catch(() => null);
+    if (typeof stored === "string" && stored.length > 0) {
+      figma.ui.postMessage({ type: "validate-access-token", payload: { token: stored } });
+    } else {
+      figma.ui.postMessage({
+        type: "access-token-status",
+        payload: { hasToken: false, error: "No token saved yet." },
+      });
+    }
     return;
   }
 
