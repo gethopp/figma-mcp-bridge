@@ -559,6 +559,24 @@ export const createImageInput = z.object({
   fileKey: fileKeyField,
 });
 
+export const createSvgInput = z.object({
+  source: z
+    .string()
+    .min(1)
+    .describe(
+      "SVG source. Accepts raw <svg> markup or a local SVG file path inside the MCP server working directory."
+    ),
+  name: z.string().optional().describe("Optional SVG node name"),
+  parentId: createFigmaNodeIdSchema()
+    .optional()
+    .describe("Optional parent node ID to append the editable SVG into"),
+  x: z.number().optional().describe("Optional x position"),
+  y: z.number().optional().describe("Optional y position"),
+  width: z.number().positive().optional().describe("Optional width"),
+  height: z.number().positive().optional().describe("Optional height"),
+  fileKey: fileKeyField,
+});
+
 /**
  * A serialized layer tree produced by html-figma's browser `htmlToFigma()`.
  * The tree is validated loosely here (root must at least carry a node type);
@@ -729,6 +747,8 @@ export const toolInputSchemas = {
 
   create_image: createImageInput,
 
+  create_svg: createSvgInput,
+
   import_html_layers: importHtmlLayersInput,
 
   duplicate_nodes: z.object({
@@ -886,6 +906,10 @@ const createImageRpcInput = createImageInput.omit({ source: true, fileKey: true 
     .describe("Base64-encoded image bytes, resolved from `source` by the tool handler"),
 });
 
+const createSvgRpcInput = createSvgInput.omit({ source: true, fileKey: true }).extend({
+  svgText: z.string().min(1).describe("SVG markup resolved from source by the tool handler"),
+});
+
 /**
  * Schemas the RPC path validates against. Tools whose handlers rewrite the
  * payload before forwarding validate their wire shape here; every other tool
@@ -905,6 +929,7 @@ const importHtmlLayersRpcInput = importHtmlLayersInput
 const rpcInputSchemas = {
   ...toolInputSchemas,
   create_image: createImageRpcInput,
+  create_svg: createSvgRpcInput,
   import_html_layers: importHtmlLayersRpcInput,
 } as const;
 
@@ -949,6 +974,7 @@ const rpcToArgs: Record<
   create_text: (_nodeIds, params) => ({ ...params }),
   create_shape: (_nodeIds, params) => ({ ...params }),
   create_image: (_nodeIds, params) => ({ ...params }),
+  create_svg: (_nodeIds, params) => ({ ...params }),
   import_html_layers: (_nodeIds, params) => ({ ...params }),
   duplicate_nodes: (nodeIds, params) => ({ nodeIds, ...params }),
   reparent_nodes: (nodeIds, params) => ({ nodeIds, ...params }),

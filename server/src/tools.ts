@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { lookup } from "node:dns/promises";
-import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import type { Stats } from "node:fs";
+import { mkdir, open, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import path from "node:path";
 import type { z } from "zod";
@@ -8,6 +9,7 @@ import type { Node } from "./node.js";
 import {
   createFrameInput,
   createImageInput,
+  createSvgInput,
   createPageInput,
   importHtmlLayersInput,
   createShapeShape,
@@ -35,6 +37,7 @@ import type { BridgeResponse } from "./types.js";
 import { Follower } from "./follower.js";
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+const MAX_SVG_BYTES = 2 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 15_000;
 const MAX_IMAGE_REDIRECTS = 5;
 
@@ -397,6 +400,30 @@ export function registerTools(server: McpServer, node: Node, port: number): void
   );
 
   server.tool(
+    "create_svg",
+    "Insert raw SVG markup or a workspace-local SVG file as editable Figma vector layers using figma.createNodeFromSvg. You can set its parent, position, size, and semantic name. When multiple files are connected, specify fileKey.",
+    createSvgInput.shape,
+    async ({ source, fileKey, ...params }): Promise<ToolResult> => {
+      try {
+        const svgText = await loadSvgSource(source, process.cwd());
+        return await renderResponse(() =>
+          node.sendWithParams("create_svg", undefined, { ...params, svgText }, fileKey)
+        );
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: err instanceof Error ? err.message : String(err),
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
     "import_html_layers",
     "Import a DOM serialization (JSON produced by html-figma's browser htmlToFigma()) as editable Figma layers inside a new wrapper frame — frames, text, rectangles, and SVG vectors in one call. Source must be a JSON file path inside the MCP server working directory. Optionally append the wrapper into an existing frame/section via parentId. Requires the plugin to be open in the design editor. When multiple files are connected, specify fileKey.",
     importHtmlLayersInput.shape,
@@ -733,6 +760,129 @@ function resolveAndValidateOutputPath(outputPath: string, workspaceRoot: string)
     throw new Error(`outputPath must be inside the MCP server working directory: ${resolvedRoot}`);
   }
   return resolvedPath;
+}
+
+/**
+ * Checks whether text has an SVG document element after the small XML prolog
+ * subset commonly emitted by vector editors: an optional UTF-8 BOM, XML
+ * declaration, and leading comments.
+ *
+ * XML 1.0 defines a document as a prolog followed by one document element,
+ * with comments allowed in the prolog. SVG 2 defines `svg` as that root
+ * element for a standalone SVG document:
+ * https://www.w3.org/TR/xml/#NT-document
+ * https://www.w3.org/TR/xml/#sec-comments
+ * https://www.w3.org/TR/SVG2/struct.html#SVGElement
+ */
+function hasSvgRoot(source: string): boolean {
+  let remainder = source.replace(/^\uFEFF/, "").trimStart();
+
+  if (remainder.startsWith("<?xml")) {
+    const declarationEnd = remainder.indexOf("?>");
+    if (declarationEnd === -1) return false;
+    remainder = remainder.slice(declarationEnd + 2).trimStart();
+  }
+
+  while (remainder.startsWith("<!--")) {
+    const commentEnd = remainder.indexOf("-->");
+    if (commentEnd === -1) return false;
+    remainder = remainder.slice(commentEnd + 3).trimStart();
+  }
+
+  if (!remainder.startsWith("<svg")) return false;
+  const tagNameBoundary = remainder[4];
+  return tagNameBoundary === ">" || tagNameBoundary === "/" || /\s/.test(tagNameBoundary);
+}
+
+/** Returns true when candidate is the root itself or a descendant of it. */
+function isPathInside(candidate: string, root: string): boolean {
+  const relativePath = path.relative(root, candidate);
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+/**
+ * Compares filesystem identities rather than path strings. Node exposes the
+ * device and inode/file-index values through Stats on both POSIX and Windows.
+ */
+function isSameFile(opened: Stats, current: Stats): boolean {
+  return opened.dev === current.dev && opened.ino === current.ino;
+}
+
+/**
+ * Resolves inline SVG markup or reads a workspace-contained SVG file and
+ * validates its size and document root before forwarding it to Figma.
+ */
+async function loadSvgSource(source: string, workspaceRoot: string): Promise<string> {
+  let svgText: string;
+
+  if (hasSvgRoot(source)) {
+    svgText = source;
+  } else {
+    const resolvedRoot = await realpath(path.resolve(workspaceRoot));
+    const lexicalPath = path.resolve(resolvedRoot, source);
+    if (!isPathInside(lexicalPath, resolvedRoot)) {
+      throw new Error(
+        "SVG source must be inside the MCP server working directory: " + resolvedRoot
+      );
+    }
+
+    let resolvedPath: string;
+    try {
+      resolvedPath = await realpath(lexicalPath);
+    } catch {
+      throw new Error("SVG source not found: " + source);
+    }
+
+    if (!isPathInside(resolvedPath, resolvedRoot)) {
+      throw new Error(
+        "SVG source must be inside the MCP server working directory: " + resolvedRoot
+      );
+    }
+
+    // Read and validate through one descriptor. Re-resolving the caller's path
+    // after open and comparing file identities detects a symlink or directory
+    // swap between the containment check and open without relying on
+    // platform-specific openat/openat2 bindings that Node does not expose.
+    const file = await open(resolvedPath, "r");
+    try {
+      const openedInfo = await file.stat();
+      if (!openedInfo.isFile()) {
+        throw new Error("SVG source is not a regular file: " + source);
+      }
+      if (openedInfo.size > MAX_SVG_BYTES) {
+        throw new Error("SVG source exceeds the " + MAX_SVG_BYTES + " byte bridge limit");
+      }
+
+      let currentPath: string;
+      try {
+        currentPath = await realpath(lexicalPath);
+      } catch {
+        throw new Error("SVG source changed while it was being opened: " + source);
+      }
+      if (!isPathInside(currentPath, resolvedRoot)) {
+        throw new Error(
+          "SVG source must be inside the MCP server working directory: " + resolvedRoot
+        );
+      }
+
+      const currentInfo = await stat(currentPath);
+      if (!isSameFile(openedInfo, currentInfo)) {
+        throw new Error("SVG source changed while it was being opened: " + source);
+      }
+
+      svgText = await file.readFile({ encoding: "utf8" });
+    } finally {
+      await file.close();
+    }
+  }
+
+  if (Buffer.byteLength(svgText, "utf8") > MAX_SVG_BYTES) {
+    throw new Error("SVG source exceeds the " + MAX_SVG_BYTES + " byte bridge limit");
+  }
+  if (!hasSvgRoot(svgText)) {
+    throw new Error("SVG source must begin with an <svg> element");
+  }
+  return svgText;
 }
 
 /**

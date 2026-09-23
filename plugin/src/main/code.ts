@@ -26,6 +26,7 @@ type RequestType =
   | "create_text"
   | "create_shape"
   | "create_image"
+  | "create_svg"
   | "import_html_layers"
   | "duplicate_nodes"
   | "reparent_nodes"
@@ -345,6 +346,7 @@ const EDIT_REQUEST_TYPES = new Set<RequestType>([
   "create_text",
   "create_shape",
   "create_image",
+  "create_svg",
   "import_html_layers",
   "duplicate_nodes",
   "reparent_nodes",
@@ -1497,6 +1499,50 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
             width: node.width,
             height: node.height,
             imageHash: image.hash,
+          },
+        };
+      }
+      case "create_svg": {
+        const params = request.params ?? {};
+        if (typeof params.svgText !== "string" || params.svgText.trim().length === 0) {
+          throw new Error("svgText is required for create_svg");
+        }
+
+        // Validate the destination before creating anything. createNodeFromSvg
+        // immediately inserts a node on the current page, so resolving the
+        // parent afterwards could leave an orphan behind when parentId is bad.
+        const parent =
+          typeof params.parentId === "string"
+            ? await getParentNodeById(params.parentId)
+            : undefined;
+
+        const node = figma.createNodeFromSvg(params.svgText);
+        try {
+          if (typeof params.name === "string") {
+            node.name = params.name;
+          }
+
+          resizeNodeIfSupported(node, params.width, params.height);
+          parent?.appendChild(node);
+          positionNode(node, params.x, params.y);
+        } catch (error) {
+          node.remove();
+          throw error;
+        }
+
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: {
+            nodeId: node.id,
+            nodeName: node.name,
+            nodeType: node.type,
+            parentId: node.parent?.id,
+            x: node.x,
+            y: node.y,
+            width: node.width,
+            height: node.height,
+            childCount: node.children.length,
           },
         };
       }
