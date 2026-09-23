@@ -183,6 +183,8 @@ For local development, add the following to your AI tool's MCP config:
 }
 ```
 
+For remote access over HTTP instead of stdio, set `FIGMA_MCP_HTTP_PORT` (and optionally `FIGMA_MCP_HTTP_HOST`, default `0.0.0.0`). The server then also serves the MCP Streamable HTTP endpoint (default path `/mcp`, plus `/health` for checks).
+
 ### Code style
 
 The repo is formatted with [Prettier](https://prettier.io) (config in `.prettierrc`). A Husky pre-commit hook runs `lint-staged`, which formats only your staged files, so commits stay formatted automatically. You can also run it manually:
@@ -205,6 +207,7 @@ Figma-MCP-Bridge/
         ├── follower.ts   # Follower: proxies to leader via HTTP
         ├── node.ts       # Dynamic leader/follower role switching
         ├── election.ts   # Leader election & health monitoring
+        ├── remote-mcp.ts # Optional Streamable HTTP endpoint for remote MCP clients
         ├── tools.ts      # MCP tool definitions
         └── types.ts      # Shared types
 ```
