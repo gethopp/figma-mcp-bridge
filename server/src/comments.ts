@@ -287,14 +287,23 @@ export async function getComments(
     );
   }
 
-  const limit = options.limit ?? DEFAULT_LIMIT;
-  const limited = filtered.slice(0, Math.max(1, limit));
+  // Emit whole threads within the budget so `total` always equals the
+  // number of comments actually returned (roots + attached replies).
+  const budget = Math.max(1, options.limit ?? DEFAULT_LIMIT);
+  const emitted: CommentThread[] = [];
+  let total = 0;
+  for (const thread of groupIntoThreads(filtered)) {
+    if (total >= budget) break;
+    const replies = thread.replies.slice(0, Math.max(0, budget - total - 1));
+    emitted.push({ rootComment: thread.rootComment, replies });
+    total += 1 + replies.length;
+  }
 
   return {
     fileKey: options.fileKey,
-    total: limited.length,
+    total,
     unresolvedCount,
     resolvedCount,
-    threads: groupIntoThreads(limited, filtered),
+    threads: emitted,
   };
 }
