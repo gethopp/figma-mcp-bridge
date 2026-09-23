@@ -73,6 +73,10 @@ export default function App() {
   const [checkingToken, setCheckingToken] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<number | null>(null);
+  // The window message listener is registered once, so it would capture a
+  // stale status — read the current file key through this ref instead.
+  const fileKeyRef = useRef("");
+  fileKeyRef.current = status.fileKey;
 
   const sendToServer = (payload: Record<string, unknown>) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
@@ -81,7 +85,10 @@ export default function App() {
   };
 
   /**
-   * Checks a token against the Figma REST API (`GET /v1/me`).
+   * Checks a token against the Figma REST API. `GET /v1/me` needs the
+   * `current_user:read` scope, so a 403 there may mean a comments-scoped
+   * token rather than a bad one — in that case the connected file's comments
+   * endpoint (the one the bridge actually uses) gets the final word.
    * @param token - Personal access token to verify (never stored here).
    * @param isStoredCheck - True when checking the saved token vs. typed input.
    * @returns True when valid, false when rejected, null when unverifiable.
@@ -92,26 +99,46 @@ export default function App() {
   ): Promise<boolean | null> => {
     setCheckingToken(true);
     setTokenValid(null);
+    const headers = { "X-Figma-Token": token };
+    const prefix = isStoredCheck ? "Saved token" : "Token";
     try {
-      const response = await fetch("https://api.figma.com/v1/me", {
-        headers: { "X-Figma-Token": token },
+      const me = await fetch("https://api.figma.com/v1/me", {
+        headers,
+        signal: AbortSignal.timeout(10_000),
       });
-      if (response.ok) {
-        const me = (await response.json().catch(() => null)) as { handle?: unknown } | null;
-        const handle = typeof me?.handle === "string" && me.handle ? ` (${me.handle})` : "";
+      if (me.ok) {
+        const profile = (await me.json().catch(() => null)) as { handle?: unknown } | null;
+        const handle =
+          typeof profile?.handle === "string" && profile.handle ? ` (${profile.handle})` : "";
         setTokenValid(true);
-        setTokenFeedback(
-          isStoredCheck ? `Saved token is valid${handle}.` : `Token is valid${handle}.`
-        );
+        setTokenFeedback(`${prefix} is valid${handle}.`);
         return true;
       }
-      if (response.status === 401 || response.status === 403) {
+      if (me.status === 401) {
         setTokenValid(false);
         setTokenFeedback("Token is invalid — check the value and save again.");
         return false;
       }
+      if (me.status === 403 && fileKeyRef.current) {
+        const comments = await fetch(
+          `https://api.figma.com/v1/files/${encodeURIComponent(fileKeyRef.current)}/comments`,
+          { headers, signal: AbortSignal.timeout(10_000) }
+        );
+        if (comments.ok) {
+          setTokenValid(true);
+          setTokenFeedback(
+            `${prefix} works for comments (identity check needs current_user:read).`
+          );
+          return true;
+        }
+      }
+      if (me.status === 401 || me.status === 403) {
+        setTokenValid(false);
+        setTokenFeedback("Token is invalid — check the value and scopes, then save again.");
+        return false;
+      }
       setTokenValid(null);
-      setTokenFeedback(`Could not verify (Figma returned ${response.status}).`);
+      setTokenFeedback(`Could not verify (Figma returned ${me.status}).`);
       return null;
     } catch {
       setTokenValid(null);

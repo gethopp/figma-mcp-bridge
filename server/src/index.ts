@@ -39,12 +39,24 @@ function resolveOptionalPort(name: string): number | null {
 
 const PORT = resolvePort();
 
+/**
+ * Checks whether a startup error is a taken-port error.
+ * @param err - Error thrown while binding a listener.
+ * @returns True when another process already owns the port.
+ */
+function isAddrInUse(err: unknown): boolean {
+  return err instanceof Error && (err as NodeJS.ErrnoException).code === "EADDRINUSE";
+}
+
 async function main(): Promise<void> {
   const node = new Node(PORT);
   const election = new Election(PORT, node);
 
   const remoteMcpPort = resolveOptionalPort("FIGMA_MCP_HTTP_PORT");
-  const remoteMcpHost = process.env.FIGMA_MCP_HTTP_HOST ?? "0.0.0.0";
+  // Loopback by default: the HTTP endpoint has no auth, so remote exposure
+  // requires explicitly setting FIGMA_MCP_HTTP_HOST (preferably behind an
+  // authenticating proxy, since it serves the full write tool surface).
+  const remoteMcpHost = process.env.FIGMA_MCP_HTTP_HOST ?? "127.0.0.1";
   let remoteMcp: RemoteMcpServer | null = null;
 
   if (remoteMcpPort !== null) {
@@ -53,7 +65,20 @@ async function main(): Promise<void> {
       port: remoteMcpPort,
       bridgePort: PORT,
     });
-    await remoteMcp.start();
+    try {
+      await remoteMcp.start();
+    } catch (err) {
+      // A taken HTTP port must not kill the stdio bridge — it just means
+      // another instance already serves remote clients.
+      if (isAddrInUse(err)) {
+        console.error(
+          `Remote MCP HTTP port ${remoteMcpPort} already in use — continuing with stdio only`
+        );
+        remoteMcp = null;
+      } else {
+        throw err;
+      }
+    }
   }
 
   await election.start();

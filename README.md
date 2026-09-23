@@ -183,7 +183,7 @@ For local development, add the following to your AI tool's MCP config:
 }
 ```
 
-For remote access over HTTP instead of stdio, set `FIGMA_MCP_HTTP_PORT` (and optionally `FIGMA_MCP_HTTP_HOST`, default `0.0.0.0`). The server then also serves the MCP Streamable HTTP endpoint (default path `/mcp`, plus `/health` for checks).
+For remote access over HTTP instead of stdio, set `FIGMA_MCP_HTTP_PORT` (and optionally `FIGMA_MCP_HTTP_HOST`, default `127.0.0.1`). The server then also serves the MCP Streamable HTTP endpoint (default path `/mcp`, plus `/health` for checks). The HTTP endpoint has no authentication and serves the full tool surface including writes — only set `FIGMA_MCP_HTTP_HOST=0.0.0.0` on trusted networks, preferably behind an authenticating proxy. If the port is already taken, the server logs a warning and continues with stdio.
 
 ### Code style
 

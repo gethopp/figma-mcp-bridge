@@ -12,7 +12,13 @@ import { VERSION } from "./version.js";
 type Session = {
   server: McpServer;
   transport: StreamableHTTPServerTransport;
+  lastSeen: number;
 };
+
+/** Max concurrent remote MCP sessions; further initializes get a 503. */
+const MAX_SESSIONS = 20;
+/** Idle sessions older than this are closed on the next initialize. */
+const SESSION_TTL_MS = 30 * 60 * 1000;
 
 export interface RemoteMcpServerOptions {
   host: string;
@@ -47,7 +53,20 @@ export class RemoteMcpServer {
     if (this.server) return;
 
     const server = http.createServer((req, res) => {
-      void this.handleRequest(req, res);
+      // Never leave a client hanging: end the response on unexpected errors.
+      void this.handleRequest(req, res).catch((error) => {
+        console.error("Remote MCP request error:", error);
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Internal server error" }));
+        } else {
+          try {
+            res.end();
+          } catch {
+            // Socket already gone — nothing left to do.
+          }
+        }
+      });
     });
 
     server.on("error", (error) => {
@@ -143,13 +162,26 @@ export class RemoteMcpServer {
         return;
       }
 
+      this.evictExpiredSessions();
+      if (this.sessions.size >= MAX_SESSIONS) {
+        this.sendJson(res, 503, {
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "Too many active sessions" },
+          id: null,
+        });
+        return;
+      }
+
       session = this.createSession();
       await session.server.connect(session.transport);
 
       session.transport.onclose = () => {
         const id = session?.transport.sessionId;
         if (id) this.sessions.delete(id);
+        void Promise.resolve(session?.server.close()).catch(() => undefined);
       };
+    } else {
+      session.lastSeen = Date.now();
     }
 
     await session.transport.handleRequest(req, res, body);
@@ -171,7 +203,21 @@ export class RemoteMcpServer {
       sessionIdGenerator: () => randomUUID(),
     });
 
-    return { server, transport };
+    return { server, transport, lastSeen: Date.now() };
+  }
+
+  /**
+   * Closes sessions idle longer than SESSION_TTL_MS. Runs on initialize so
+   * abandoned sessions cannot accumulate without bound.
+   */
+  private evictExpiredSessions(): void {
+    const now = Date.now();
+    for (const [id, session] of this.sessions) {
+      if (now - session.lastSeen <= SESSION_TTL_MS) continue;
+      this.sessions.delete(id);
+      void Promise.resolve(session.transport.close()).catch(() => undefined);
+      void Promise.resolve(session.server.close()).catch(() => undefined);
+    }
   }
 
   private async handleGet(req: IncomingMessage, res: ServerResponse): Promise<void> {
