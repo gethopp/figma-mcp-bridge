@@ -1517,13 +1517,18 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
             : undefined;
 
         const node = figma.createNodeFromSvg(params.svgText);
-        if (typeof params.name === "string") {
-          node.name = params.name;
-        }
+        try {
+          if (typeof params.name === "string") {
+            node.name = params.name;
+          }
 
-        resizeNodeIfSupported(node, params.width, params.height);
-        parent?.appendChild(node);
-        positionNode(node, params.x, params.y);
+          resizeNodeIfSupported(node, params.width, params.height);
+          parent?.appendChild(node);
+          positionNode(node, params.x, params.y);
+        } catch (error) {
+          node.remove();
+          throw error;
+        }
 
         return {
           type: request.type,
