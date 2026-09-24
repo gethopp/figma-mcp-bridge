@@ -11,5 +11,8 @@ pnpm-lock.yaml
 dist/
 build/
 
+# Scratch space (see AGENTS.md)
+.tmp/
+
 # Logs
 *.log

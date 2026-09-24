@@ -53,7 +53,7 @@ That's it — no binaries to download or install.
 
 ### 2. Add the Figma plugin
 
-Download the plugin from the [latest release](https://github.com/gethopp/figma-mcp-bridge/releases) page, then in Figma go to `Plugins > Development > Import plugin from manifest` and select the `manifest.json` file from the `plugin/` folder.
+Download the plugin from the [latest release](https://github.com/gethopp/figma-mcp-bridge/releases) page, then in Figma go to `Plugins > Development > Import plugin from manifest` and select the `manifest.json` file from the `plugin/` folder. The same plugin runs in Figma design files, Dev Mode (read-only), and FigJam boards.
 
 ### 3. Start using it 🎉
 
@@ -65,53 +65,69 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 
 ## Available Tools
 
-| Tool                           | Description                                                                            |
-| ------------------------------ | -------------------------------------------------------------------------------------- |
-| `list_files`                   | List all connected Figma files (supports multi-file workflows)                         |
-| `get_document`                 | Get the current Figma page document tree                                               |
-| `get_selection`                | Get the currently selected nodes in Figma                                              |
-| `get_node`                     | Get a specific Figma node by ID (colon format, e.g. `4029:12345`)                      |
-| `get_styles`                   | Get all local paint, text, effect, and grid styles                                     |
-| `get_metadata`                 | Get file name, pages, and current page info                                            |
-| `get_design_context`           | Get a depth-limited tree optimized for understanding design context                    |
-| `get_variable_defs`            | Get all variable collections, modes, and values (design tokens)                        |
-| `get_screenshot`               | Export nodes as PNG/SVG/JPG/PDF (base64-encoded)                                       |
-| `save_screenshots`             | Export and save screenshots directly to the local filesystem                           |
-| `get_motion_styles`            | List all available animation presets (beta)                                            |
-| `get_node_motion`              | Read a node's current animation styles and properties (beta)                           |
-| `apply_animation_style`        | Apply a preset animation style to a node (beta)                                        |
-| `remove_animation_style`       | Remove an applied animation style from a node (beta)                                   |
-| `apply_manual_keyframe_track`  | Apply a manual keyframe track to a node property (beta)                                |
-| `remove_manual_keyframe_track` | Remove a manual keyframe track from a node property (beta)                             |
-| `set_timeline_duration`        | Set the duration of a timeline in seconds (beta)                                       |
-| `set_node_visibility`          | Show or hide specific nodes                                                            |
-| `set_text_content`             | Replace the contents of a text node                                                    |
-| `set_text_properties`          | Patch font, size, alignment, auto-resize, color, and bounds on a text node             |
-| `set_node_properties`          | Patch common node properties: name, position, size, visibility, opacity, corner radius |
-| `set_solid_fill`               | Replace a node's fill or stroke with a single solid paint                              |
-| `set_gradient_fill`            | Replace a node's fill or stroke with a linear/radial/angular/diamond gradient          |
-| `set_effects`                  | Replace a node's effects list (drop/inner shadows, layer/background blurs)             |
-| `set_stroke_properties`        | Patch stroke weight, align, dash pattern, cap, and join                                |
-| `set_auto_layout`              | Configure auto-layout direction, padding, gap, alignment, sizing, and wrap             |
-| `create_page`                  | Create a new page in the document, optionally switching to it                          |
-| `create_frame`                 | Create a new frame, optionally under a parent                                          |
-| `create_text`                  | Create a new text node                                                                 |
-| `create_shape`                 | Create a rectangle, ellipse, or line                                                   |
-| `create_image`                 | Create an image-backed rectangle from a local path, URL, or data URI                   |
-| `import_html_layers`           | Bulk-import an html-figma layer tree (JSON) as frames, text, rectangles, and vectors   |
-| `duplicate_nodes`              | Duplicate nodes in place                                                               |
-| `reparent_nodes`               | Move nodes into another parent                                                         |
-| `group_nodes`                  | Wrap a list of nodes (sharing a parent) in a new group                                 |
-| `ungroup_node`                 | Ungroup a group or frame — children move up to its parent                              |
-| `set_selection`                | Set the page selection to a list of node IDs (works in Dev Mode)                       |
-| `scroll_and_zoom_into_view`    | Frame the viewport around the given nodes (works in Dev Mode)                          |
-| `delete_nodes`                 | Delete nodes with explicit confirmation                                                |
+| Tool                           | Description                                                                                              |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `list_files`                   | List all connected Figma files (supports multi-file workflows)                                           |
+| `get_document`                 | Get the current Figma page document tree                                                                 |
+| `get_selection`                | Get the currently selected nodes in Figma                                                                |
+| `get_node`                     | Get a specific Figma node by ID (colon format, e.g. `4029:12345`)                                        |
+| `get_styles`                   | Get all local paint, text, effect, and grid styles                                                       |
+| `get_metadata`                 | Get file name, pages, and current page info                                                              |
+| `get_design_context`           | Get a depth-limited tree optimized for understanding design context                                      |
+| `get_variable_defs`            | Get all variable collections, modes, and values (design tokens)                                          |
+| `get_screenshot`               | Export nodes as PNG/SVG/JPG/PDF (base64-encoded)                                                         |
+| `save_screenshots`             | Export and save screenshots directly to the local filesystem                                             |
+| `get_motion_styles`            | List all available animation presets (beta)                                                              |
+| `get_node_motion`              | Read a node's current animation styles and properties (beta)                                             |
+| `apply_animation_style`        | Apply a preset animation style to a node (beta)                                                          |
+| `remove_animation_style`       | Remove an applied animation style from a node (beta)                                                     |
+| `apply_manual_keyframe_track`  | Apply a manual keyframe track to a node property (beta)                                                  |
+| `remove_manual_keyframe_track` | Remove a manual keyframe track from a node property (beta)                                               |
+| `set_timeline_duration`        | Set the duration of a timeline in seconds (beta)                                                         |
+| `set_node_visibility`          | Show or hide specific nodes                                                                              |
+| `set_text_content`             | Replace the contents of a text node (TEXT, FigJam sticky, or shape label)                                |
+| `set_text_properties`          | Patch font, size, alignment, auto-resize, color, and bounds on text nodes/sublayers                      |
+| `set_node_properties`          | Patch common node properties: name, position, size, visibility, opacity, corner radius (single or batch) |
+| `set_solid_fill`               | Replace a node's fill or stroke with a single solid paint                                                |
+| `set_gradient_fill`            | Replace a node's fill or stroke with a linear/radial/angular/diamond gradient                            |
+| `set_effects`                  | Replace a node's effects list (drop/inner shadows, layer/background blurs)                               |
+| `set_stroke_properties`        | Patch stroke weight, align, dash pattern, cap, and join                                                  |
+| `set_auto_layout`              | Configure auto-layout direction, padding, gap, alignment, sizing, and wrap (not sections)                |
+| `create_page`                  | Create a new page in the document, optionally switching to it                                            |
+| `create_frame`                 | Create a new frame, optionally under a parent                                                            |
+| `create_section`               | Create a section — a named, resizable container (Figma and FigJam)                                       |
+| `create_text`                  | Create a new text node                                                                                   |
+| `create_shape`                 | Create a rectangle, ellipse, or line                                                                     |
+| `create_shape_with_text`       | Create a FigJam shape with its own text label (SHAPE_WITH_TEXT), incl. text fill                         |
+| `create_image`                 | Create an image-backed rectangle from a local path, URL, or data URI                                     |
+| `create_sticky`                | Create a sticky note in FigJam                                                                           |
+| `create_connector`             | Create a connector between two nodes in FigJam, with attachment anchors                                  |
+| `import_html_layers`           | Bulk-import an html-figma layer tree (JSON) as frames, text, rectangles, and vectors                     |
+| `duplicate_nodes`              | Duplicate nodes in place                                                                                 |
+| `duplicate_with_offset`        | Duplicate nodes and move each duplicate by a fixed offset                                                |
+| `fit_to_content`               | Resize a SECTION around its children with optional padding                                               |
+| `distribute_horizontally`      | Space 3+ nodes with equal horizontal gaps (first/last stay fixed)                                        |
+| `distribute_vertically`        | Space 3+ nodes with equal vertical gaps (first/last stay fixed)                                          |
+| `align_to_grid`                | Snap node positions to a grid of the given size                                                          |
+| `place_below`                  | Move a node below another with gap and start/center alignment                                            |
+| `place_right_of`               | Move a node to the right of another with gap and start/center alignment                                  |
+| `reparent_nodes`               | Move nodes into another parent                                                                           |
+| `group_nodes`                  | Wrap a list of nodes (sharing a parent) in a new group                                                   |
+| `ungroup_node`                 | Ungroup a group or frame — children move up to its parent                                                |
+| `set_selection`                | Set the page selection to a list of node IDs (works in Dev Mode)                                         |
+| `scroll_and_zoom_into_view`    | Frame the viewport around the given nodes (works in Dev Mode)                                            |
+| `delete_nodes`                 | Delete nodes with explicit confirmation                                                                  |
 
 All tools accept an optional `fileKey` parameter when multiple Figma files are connected. Use `list_files` to discover connected files and their keys.
 
 ### Editing Notes
 
 - Edit tools work only when the plugin is opened in Figma's design editor (Dev Mode is read-only — they will return a clear error there).
+- In **FigJam**, read tools plus the write tools (`set_text_content`, `set_text_properties`, `set_node_properties`, `set_solid_fill`, `create_text`, `create_shape`, `create_shape_with_text`, `create_sticky`, `create_connector`, `create_section`, `duplicate_nodes`, `duplicate_with_offset`, `fit_to_content`, `distribute_horizontally`, `distribute_vertically`, `align_to_grid`, `place_below`, `place_right_of`, `delete_nodes`, ...) are available. Auto-layout and motion/animation tools return a clear error in FigJam.
+- `set_text_content` / `set_text_properties` edit a TEXT node's content directly, or the text sublayer of a FigJam STICKY / SHAPE_WITH_TEXT node. Alignment and auto-resize are TEXT-node-only — they return a clear error on stickies and shapes (x/y/width/height still apply to the containing node).
+- `set_node_properties` accepts either `nodeId` or a `nodeIds` array to apply the same property changes to several nodes in one call.
+- `set_auto_layout` targets frames; SECTION nodes have no auto-layout in Figma's API and return an explicit error.
+- `fit_to_content` works on SECTION nodes only (Figma's API exposes no equivalent for other containers): it shifts children so their bounding box starts at `padding` and resizes the section to bbox + 2×padding.
 - The current user must have permission to edit the target file.
 - `delete_nodes` is intentionally gated behind `confirm: true`.
 - Text edits automatically load the fonts currently used by the target text node before applying the new content.
@@ -177,6 +193,16 @@ The repo is formatted with [Prettier](https://prettier.io) (config in `.prettier
 bun run format        # format the whole repo
 bun run format:check  # verify formatting without writing (useful in CI)
 ```
+
+### Testing
+
+This repo uses [Bun](https://bun.sh) as its test runner. Run the test suite with:
+
+```bash
+bun test
+```
+
+Tests live in `server/test/` and validate zod schemas and other pure logic. The test suite currently covers schema validation for `create_section` and `create_shape_with_text`, ensuring inputs are accepted/rejected as expected.
 
 ## Structure
 

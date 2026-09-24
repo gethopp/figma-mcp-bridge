@@ -362,8 +362,21 @@ export const serializeNode = (node: SerializableNode): SerializedNode => {
     styles: serializeStyles(node),
   };
 
+  // Handle Figma TEXT nodes and FigJam STICKY / SHAPE_WITH_TEXT nodes (which
+  // expose their label through a `.text` sublayer).
   if (node.type === "TEXT") {
     return serializeText(node, base);
+  }
+  if ((node.type === "STICKY" || node.type === "SHAPE_WITH_TEXT") && "text" in node) {
+    try {
+      const textNode = node.text;
+      return {
+        ...base,
+        characters: textNode.characters,
+      };
+    } catch {
+      // text sub-node may not be accessible
+    }
   }
 
   if ("children" in node) {
