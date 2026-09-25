@@ -146,10 +146,48 @@ export function registerTools(server: McpServer, node: Node, port: number): void
 
   server.tool(
     "get_node",
-    "Get a specific Figma node by ID. Accepts top-level IDs like '4029:12345' and instance-child IDs like 'I12740:17806;12740:17793'. Never use hyphens. When multiple files are connected, specify fileKey.",
+    "Get a specific Figma node by ID. Accepts top-level IDs like '4029:12345' and instance-child IDs like 'I12740:17806;12740:17793'. Never use hyphens. Pass includePrototype: true to also get its prototype interactions. When multiple files are connected, specify fileKey.",
     toolInputSchemas.get_node.shape,
-    async ({ nodeId, fileKey }): Promise<ToolResult> => {
+    async ({ nodeId, includePrototype, fileKey }): Promise<ToolResult> => {
+      if (includePrototype === true) {
+        return renderResponse(() =>
+          node.sendWithParams("get_node", [nodeId], { includePrototype: true }, fileKey)
+        );
+      }
       return renderResponse(() => node.send("get_node", [nodeId], fileKey));
+    }
+  );
+
+  server.tool(
+    "get_prototype_connections",
+    "Read-only. List prototype interactions on a node and all its descendants (including buttons and instance sublayers): trigger, every action (navigate/swap/overlay/scroll-to/change-to, back, close, URL, set variable/mode, conditional blocks with nested actions, media), transition, and each destination resolved to its name and containing screen. Also returns the page's flow starting points. Stats separate nodes with no reactions, node types that cannot have reactions, and failed reads. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_prototype_connections.shape,
+    async ({ nodeId, maxNodes, includeEmpty, fileKey }): Promise<ToolResult> => {
+      const params: Record<string, unknown> = {};
+      if (maxNodes !== undefined) params.maxNodes = maxNodes;
+      if (includeEmpty !== undefined) params.includeEmpty = includeEmpty;
+      return renderResponse(() =>
+        node.sendWithParams(
+          "get_prototype_connections",
+          nodeId ? [nodeId] : undefined,
+          params,
+          fileKey
+        )
+      );
+    }
+  );
+
+  server.tool(
+    "trace_prototype_flow",
+    "Read-only. Follow prototype navigation breadth-first from a screen: returns the screens reached (with depth and the source node that reached them) and every interaction edge with its source node, trigger, action, conditional branch, and destination screen. Cycles are marked as revisits; unresolvable destinations are listed. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.trace_prototype_flow.shape,
+    async ({ startNodeId, maxScreens, maxNodesPerScreen, fileKey }): Promise<ToolResult> => {
+      const params: Record<string, unknown> = {};
+      if (maxScreens !== undefined) params.maxScreens = maxScreens;
+      if (maxNodesPerScreen !== undefined) params.maxNodesPerScreen = maxNodesPerScreen;
+      return renderResponse(() =>
+        node.sendWithParams("trace_prototype_flow", [startNodeId], params, fileKey)
+      );
     }
   );
 
