@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "test": "tsc && node --test test/prototype-schema.test.mjs",
     "prepublishOnly": "bun run build"
   },
   "keywords": [

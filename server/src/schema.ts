@@ -609,6 +609,47 @@ export const toolInputSchemas = {
     nodeId: createFigmaNodeIdSchema().describe(
       "The node ID to fetch. Accepts top-level IDs like '4029:12345' and instance-child IDs like 'I12740:17806;12740:17793'."
     ),
+    includePrototype: z
+      .boolean()
+      .optional()
+      .describe(
+        "When true, adds a `prototype` field with the same data get_prototype_connections returns for this node and its descendants. Default false keeps the original response shape."
+      ),
+    fileKey: fileKeyField,
+  }),
+
+  get_prototype_connections: z.object({
+    nodeId: createFigmaNodeIdSchema()
+      .optional()
+      .describe(
+        "Root to scan (a screen, section, button or instance). The node and all descendants, including instance sublayers, are inspected. Omit to scan the current page."
+      ),
+    maxNodes: z
+      .number()
+      .int()
+      .min(1)
+      .max(50000)
+      .optional()
+      .describe("Stop after inspecting this many nodes (default 5000); `truncated` reports it."),
+    includeEmpty: z
+      .boolean()
+      .optional()
+      .describe("Also list nodes that support reactions but have none (default false)."),
+    fileKey: fileKeyField,
+  }),
+
+  trace_prototype_flow: z.object({
+    startNodeId: createFigmaNodeIdSchema().describe(
+      "Screen (or any node inside one) to start from. Screen-to-screen navigation is followed breadth-first."
+    ),
+    maxScreens: z
+      .number()
+      .int()
+      .min(1)
+      .max(500)
+      .optional()
+      .describe("Maximum screens to expand (default 25); the rest are listed in `pending`."),
+    maxNodesPerScreen: z.number().int().min(1).max(50000).optional(),
     fileKey: fileKeyField,
   }),
 
@@ -921,6 +962,8 @@ const rpcToArgs: Record<
   get_selection: (_nodeIds, params) => ({ ...params }),
   get_layout_tree: (nodeIds, params) => ({ ...params, rootId: nodeIds?.[0] }),
   get_node: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  get_prototype_connections: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  trace_prototype_flow: (nodeIds, params) => ({ ...params, startNodeId: nodeIds?.[0] }),
   get_styles: (_nodeIds, params) => ({ ...params }),
   get_metadata: (_nodeIds, params) => ({ ...params }),
   get_design_context: (_nodeIds, params) => ({ ...params }),
@@ -1010,6 +1053,11 @@ export function validateRpc(
   // tool schema can validate it. The plugin reads node ids off `request.nodeIds`
   // instead, so drop it again — along with `fileKey`, which travels beside the
   // params rather than inside them.
-  const { nodeId: _nodeId, fileKey: _fileKey, ...rest } = result.data as Record<string, unknown>;
+  const {
+    nodeId: _nodeId,
+    startNodeId: _startNodeId,
+    fileKey: _fileKey,
+    ...rest
+  } = result.data as Record<string, unknown>;
   return { error: null, params: rest };
 }

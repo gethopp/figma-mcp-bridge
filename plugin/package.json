@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "concurrently \"vite build --watch\" \"vite build --watch -c vite.config.main.ts\"",
     "build": "vite build && vite build -c vite.config.main.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "test": "node --test test/prototype.test.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

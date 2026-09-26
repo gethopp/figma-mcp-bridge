@@ -1,11 +1,15 @@
 import { serializeNode } from "./serializer";
 import type { SerializableNode } from "./serializer";
 import { addLayersToFrame } from "../html-figma/figma";
+import { PrototypeSerializer, pageOf, traceFlow } from "./prototype";
+import type { ProtoNode, PrototypeResolver } from "./prototype";
 
 type RequestType =
   | "get_document"
   | "get_selection"
   | "get_node"
+  | "get_prototype_connections"
+  | "trace_prototype_flow"
   | "get_layout_tree"
   | "get_styles"
   | "get_metadata"
@@ -368,6 +372,88 @@ const requireEditorMode = (toolName: RequestType): void => {
   }
 };
 
+// --- Prototype inspection (read-only) ---
+
+const asProtoNode = (node: BaseNode): ProtoNode => node as unknown as ProtoNode;
+
+const figmaPrototypeResolver: PrototypeResolver = {
+  async getNode(id) {
+    const node = await figma.getNodeByIdAsync(id);
+    return node && node.type !== "DOCUMENT" ? asProtoNode(node) : null;
+  },
+  async getVariable(id) {
+    const variable = await figma.variables.getVariableByIdAsync(id);
+    return variable
+      ? { id: variable.id, name: variable.name, resolvedType: variable.resolvedType }
+      : null;
+  },
+  async getVariableCollection(id) {
+    const collection = await figma.variables.getVariableCollectionByIdAsync(id);
+    return collection
+      ? {
+          id: collection.id,
+          name: collection.name,
+          modes: collection.modes.map((m) => ({ modeId: m.modeId, name: m.name })),
+        }
+      : null;
+  },
+};
+
+/** Flow starting points of the page containing `node`, or an explicit reason they are absent. */
+function describePagePrototype(node: BaseNode) {
+  const page = pageOf(asProtoNode(node)) as unknown as PageNode | null;
+  if (!page) return { page: null, flowStartingPoints: { status: "unavailable" as const } };
+  let flowStartingPoints: unknown;
+  try {
+    flowStartingPoints = page.flowStartingPoints.map((f) => ({ nodeId: f.nodeId, name: f.name }));
+  } catch (err) {
+    flowStartingPoints = {
+      status: "error",
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+  return { page: { id: page.id, name: page.name }, flowStartingPoints };
+}
+
+async function getPrototypeConnections(
+  rootId: string | undefined,
+  params: ServerRequestParams | undefined
+) {
+  const root = rootId ? await figma.getNodeByIdAsync(rootId) : figma.currentPage;
+  if (!root || root.type === "DOCUMENT") throw new Error(`Node not found: ${rootId}`);
+  const maxNodes = Number(params?.maxNodes ?? 5000);
+  const includeEmpty = params?.includeEmpty === true;
+  const scan = await new PrototypeSerializer(figmaPrototypeResolver).scan(asProtoNode(root), {
+    maxNodes,
+    includeEmpty,
+  });
+  return {
+    schemaVersion: 1,
+    fileKey: figma.fileKey ?? null,
+    fileName: figma.root.name,
+    ...describePagePrototype(root),
+    ...scan,
+  };
+}
+
+async function tracePrototypeFlow(startId: string, params: ServerRequestParams | undefined) {
+  const start = await figma.getNodeByIdAsync(startId);
+  if (!start || start.type === "DOCUMENT" || start.type === "PAGE")
+    throw new Error(`Scene node not found: ${startId}`);
+  const serializer = new PrototypeSerializer(figmaPrototypeResolver);
+  const trace = await traceFlow(asProtoNode(start), serializer, figmaPrototypeResolver, {
+    maxScreens: Number(params?.maxScreens ?? 25),
+    maxNodesPerScreen: Number(params?.maxNodesPerScreen ?? 5000),
+  });
+  return {
+    schemaVersion: 1,
+    fileKey: figma.fileKey ?? null,
+    fileName: figma.root.name,
+    ...describePagePrototype(start),
+    ...trace,
+  };
+}
+
 /** Read-only geometry, deliberately independent of screenshot export. */
 async function getLayoutTree(rootId: string, maxNodes = 2000) {
   const root = await figma.getNodeByIdAsync(rootId);
@@ -457,10 +543,29 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
         if (!node || node.type === "DOCUMENT") {
           throw new Error(`Node not found: ${nodeId}`);
         }
+        const serialized = serializeNode(node as SceneNode);
+        if (request.params?.includePrototype !== true) {
+          return { type: request.type, requestId: request.requestId, data: serialized };
+        }
         return {
           type: request.type,
           requestId: request.requestId,
-          data: serializeNode(node as SceneNode),
+          data: { ...serialized, prototype: await getPrototypeConnections(nodeId, request.params) },
+        };
+      }
+      case "get_prototype_connections":
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await getPrototypeConnections(request.nodeIds?.[0], request.params),
+        };
+      case "trace_prototype_flow": {
+        const startId = request.nodeIds?.[0];
+        if (!startId) throw new Error("startNodeId is required for trace_prototype_flow");
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await tracePrototypeFlow(startId, request.params),
         };
       }
       case "get_styles": {
