@@ -583,6 +583,8 @@ export type FlowEdge = {
   /** True when the action sits inside a CONDITIONAL block. */
   conditional: boolean;
   condition?: SerializedVariableData | null;
+  /** Outer-to-inner branch conditions; null marks an else branch at that level. */
+  conditions?: Array<SerializedVariableData | null>;
   action: SerializedAction;
   kind: "screen" | "in-screen" | "back" | "close" | "url" | "variable" | "media" | "unsupported";
   /** For screen navigations: the screen the destination belongs to. */
@@ -631,7 +633,11 @@ function edgeKind(action: SerializedAction): FlowEdge["kind"] {
 export function flattenActions(
   actions: SerializedAction[],
   prefix: string,
-  inherited: { conditional: boolean; condition?: SerializedVariableData | null } = {
+  inherited: {
+    conditional: boolean;
+    condition?: SerializedVariableData | null;
+    conditions?: Array<SerializedVariableData | null>;
+  } = {
     conditional: false,
   }
 ): Array<{
@@ -639,12 +645,14 @@ export function flattenActions(
   actionPath: string;
   conditional: boolean;
   condition?: SerializedVariableData | null;
+  conditions?: Array<SerializedVariableData | null>;
 }> {
   const out: Array<{
     action: SerializedAction;
     actionPath: string;
     conditional: boolean;
     condition?: SerializedVariableData | null;
+    conditions?: Array<SerializedVariableData | null>;
   }> = [];
   actions.forEach((action, i) => {
     const path = `${prefix}.actions[${i}]`;
@@ -654,6 +662,7 @@ export function flattenActions(
           ...flattenActions(block.actions, `${path}.conditionalBlocks[${b}]`, {
             conditional: true,
             condition: block.condition,
+            conditions: [...(inherited.conditions ?? []), block.condition],
           })
         );
       });
@@ -724,7 +733,10 @@ export async function traceFlow(
             action: flat.action,
             kind: edgeKind(flat.action),
           };
-          if (flat.conditional) edge.condition = flat.condition ?? null;
+          if (flat.conditional) {
+            edge.condition = flat.condition ?? null;
+            edge.conditions = flat.conditions;
+          }
           trace.edges.push(edge);
         }
       });

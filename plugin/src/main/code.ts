@@ -421,6 +421,7 @@ async function getPrototypeConnections(
 ) {
   const root = rootId ? await figma.getNodeByIdAsync(rootId) : figma.currentPage;
   if (!root || root.type === "DOCUMENT") throw new Error(`Node not found: ${rootId}`);
+  if (root.type === "PAGE") await root.loadAsync();
   const maxNodes = Number(params?.maxNodes ?? 5000);
   const includeEmpty = params?.includeEmpty === true;
   const scan = await new PrototypeSerializer(figmaPrototypeResolver).scan(asProtoNode(root), {
