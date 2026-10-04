@@ -857,7 +857,7 @@ export const toolInputSchemas = {
       .boolean()
       .optional()
       .describe(
-        "When true, adds a `prototype` field with the same data get_prototype_connections returns for this node and its descendants. Default false keeps the original response shape."
+        "When true, adds a `prototype` field with the reactions on this node and its descendants (the scan get_prototype_connections returns). Not available in FigJam."
       ),
     fileKey: fileKeyField,
   }),
@@ -866,7 +866,7 @@ export const toolInputSchemas = {
     nodeId: createFigmaNodeIdSchema()
       .optional()
       .describe(
-        "Root to scan (a screen, section, button or instance). The node and all descendants, including instance sublayers, are inspected. Omit to scan the current page."
+        "Root to scan (a page, screen, button, or instance). The node and all descendants, including instance sublayers, are inspected. Omit to scan the current page."
       ),
     maxNodes: z
       .number()
@@ -883,7 +883,7 @@ export const toolInputSchemas = {
   }),
 
   trace_prototype_flow: z.object({
-    startNodeId: createFigmaNodeIdSchema().describe(
+    nodeId: createFigmaNodeIdSchema().describe(
       "Screen (or any node inside one) to start from. Screen-to-screen navigation is followed breadth-first."
     ),
     maxScreens: z
@@ -893,7 +893,13 @@ export const toolInputSchemas = {
       .max(500)
       .optional()
       .describe("Maximum screens to expand (default 25); the rest are listed in `pending`."),
-    maxNodesPerScreen: z.number().int().min(1).max(50000).optional(),
+    maxNodesPerScreen: z
+      .number()
+      .int()
+      .min(1)
+      .max(50000)
+      .optional()
+      .describe("Maximum nodes to inspect on each screen (default 5000)."),
     fileKey: fileKeyField,
   }),
 
@@ -1230,7 +1236,7 @@ const rpcToArgs: Record<
   get_layout_tree: (nodeIds, params) => ({ ...params, rootId: nodeIds?.[0] }),
   get_node: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   get_prototype_connections: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
-  trace_prototype_flow: (nodeIds, params) => ({ ...params, startNodeId: nodeIds?.[0] }),
+  trace_prototype_flow: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   get_styles: (_nodeIds, params) => ({ ...params }),
   get_metadata: (_nodeIds, params) => ({ ...params }),
   get_design_context: (_nodeIds, params) => ({ ...params }),
@@ -1333,7 +1339,6 @@ export function validateRpc(
   const {
     nodeId: _nodeId,
     nodeIds: _nodeIds,
-    startNodeId: _startNodeId,
     fileKey: _fileKey,
     ...rest
   } = result.data as Record<string, unknown>;

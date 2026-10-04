@@ -122,10 +122,12 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 
 All tools accept an optional `fileKey` parameter when multiple Figma files are connected. Use `list_files` to discover connected files and their keys.
 
-Prototype tools are read-only. Set `includePrototype: true` on `get_node` to include
-interactions. Flow edges retain nested branch `conditions` from outermost to innermost
-(`null` marks an else branch); `condition` retains the innermost value.
-Observed `AFTER_TIMEOUT` values are in seconds (for example, `0.8` for 800 ms).
+### Prototype Notes
+
+- Prototype tools are read-only and unavailable in FigJam. Set `includePrototype: true` on `get_node` to include the same interactions.
+- Reactions are Figma's own trigger and action data, with destinations, variables, and modes resolved to names.
+- Flow edges list their enclosing branch `conditions` from outermost to innermost (`null` marks an else branch).
+- Observed `AFTER_TIMEOUT` values are in seconds (for example, `0.8` for 800 ms).
 
 ### Editing Notes
 
