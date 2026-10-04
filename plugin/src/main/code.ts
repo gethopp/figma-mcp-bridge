@@ -1,11 +1,14 @@
 import { serializeNode } from "./serializer";
 import type { SerializableNode } from "./serializer";
 import { addLayersToFrame } from "../html-figma/figma";
+import { getPrototypeConnections, scanPrototype, tracePrototypeFlow } from "./prototype";
 
 type RequestType =
   | "get_document"
   | "get_selection"
   | "get_node"
+  | "get_prototype_connections"
+  | "trace_prototype_flow"
   | "get_layout_tree"
   | "get_styles"
   | "get_metadata"
@@ -64,6 +67,11 @@ type ServerRequestParams = Record<string, unknown> & {
    */
   clip?: boolean;
   depth?: number;
+  maxNodes?: number;
+  includeEmpty?: boolean;
+  includePrototype?: boolean;
+  maxScreens?: number;
+  maxNodesPerScreen?: number;
   styleId?: string;
   animationStyleId?: string;
   animationStyleData?: Record<string, unknown>;
@@ -429,6 +437,12 @@ const requireEditorMode = (toolName: RequestType): void => {
   }
 };
 
+const requirePrototypes = (toolName: string): void => {
+  if (isFigJam()) {
+    throw new Error(`${toolName} is not available in FigJam (FigJam files have no prototypes)`);
+  }
+};
+
 /** Read-only geometry, deliberately independent of screenshot export. */
 async function getLayoutTree(rootId: string, maxNodes = 2000) {
   const root = await figma.getNodeByIdAsync(rootId);
@@ -518,10 +532,40 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
         if (!node || node.type === "DOCUMENT") {
           throw new Error(`Node not found: ${nodeId}`);
         }
+        const data = serializeNode(node as SceneNode);
+        if (!request.params?.includePrototype) {
+          return { type: request.type, requestId: request.requestId, data };
+        }
+        requirePrototypes("get_node includePrototype");
         return {
           type: request.type,
           requestId: request.requestId,
-          data: serializeNode(node as SceneNode),
+          data: { ...data, prototype: await scanPrototype(node) },
+        };
+      }
+      case "get_prototype_connections": {
+        requirePrototypes(request.type);
+        const nodeId = request.nodeIds?.[0];
+        const root = nodeId ? await figma.getNodeByIdAsync(nodeId) : figma.currentPage;
+        if (!root || root.type === "DOCUMENT") {
+          throw new Error(`Node not found: ${nodeId}`);
+        }
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await getPrototypeConnections(root, request.params),
+        };
+      }
+      case "trace_prototype_flow": {
+        requirePrototypes(request.type);
+        const nodeId = request.nodeIds?.[0];
+        if (!nodeId) {
+          throw new Error("nodeId is required for trace_prototype_flow");
+        }
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: await tracePrototypeFlow(await getSceneNodeById(nodeId), request.params),
         };
       }
       case "get_styles": {

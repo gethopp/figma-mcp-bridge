@@ -853,6 +853,53 @@ export const toolInputSchemas = {
     nodeId: createFigmaNodeIdSchema().describe(
       "The node ID to fetch. Accepts top-level IDs like '4029:12345' and instance-child IDs like 'I12740:17806;12740:17793'."
     ),
+    includePrototype: z
+      .boolean()
+      .optional()
+      .describe(
+        "When true, adds a `prototype` field with the reactions on this node and its descendants (the scan get_prototype_connections returns). Not available in FigJam."
+      ),
+    fileKey: fileKeyField,
+  }),
+
+  get_prototype_connections: z.object({
+    nodeId: createFigmaNodeIdSchema()
+      .optional()
+      .describe(
+        "Root to scan (a page, screen, button, or instance). The node and all descendants, including instance sublayers, are inspected. Omit to scan the current page."
+      ),
+    maxNodes: z
+      .number()
+      .int()
+      .min(1)
+      .max(50000)
+      .optional()
+      .describe("Stop after inspecting this many nodes (default 5000); `truncated` reports it."),
+    includeEmpty: z
+      .boolean()
+      .optional()
+      .describe("Also list nodes that support reactions but have none (default false)."),
+    fileKey: fileKeyField,
+  }),
+
+  trace_prototype_flow: z.object({
+    nodeId: createFigmaNodeIdSchema().describe(
+      "Screen (or any node inside one) to start from. Screen-to-screen navigation is followed breadth-first."
+    ),
+    maxScreens: z
+      .number()
+      .int()
+      .min(1)
+      .max(500)
+      .optional()
+      .describe("Maximum screens to expand (default 25); the rest are listed in `pending`."),
+    maxNodesPerScreen: z
+      .number()
+      .int()
+      .min(1)
+      .max(50000)
+      .optional()
+      .describe("Maximum nodes to inspect on each screen (default 5000)."),
     fileKey: fileKeyField,
   }),
 
@@ -1188,6 +1235,8 @@ const rpcToArgs: Record<
   get_selection: (_nodeIds, params) => ({ ...params }),
   get_layout_tree: (nodeIds, params) => ({ ...params, rootId: nodeIds?.[0] }),
   get_node: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  get_prototype_connections: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  trace_prototype_flow: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   get_styles: (_nodeIds, params) => ({ ...params }),
   get_metadata: (_nodeIds, params) => ({ ...params }),
   get_design_context: (_nodeIds, params) => ({ ...params }),

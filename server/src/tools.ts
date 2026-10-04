@@ -156,10 +156,37 @@ export function registerTools(server: McpServer, node: Node, port: number): void
 
   server.tool(
     "get_node",
-    "Get a specific Figma/FigJam node by ID. Accepts top-level IDs like '4029:12345' and instance-child IDs like 'I12740:17806;12740:17793'. Never use hyphens. When multiple files are connected, specify fileKey.",
+    "Get a specific Figma/FigJam node by ID. Accepts top-level IDs like '4029:12345' and instance-child IDs like 'I12740:17806;12740:17793'. Never use hyphens. Pass includePrototype: true to also get the prototype interactions on the node and its descendants. When multiple files are connected, specify fileKey.",
     toolInputSchemas.get_node.shape,
-    async ({ nodeId, fileKey }): Promise<ToolResult> => {
-      return renderResponse(() => node.send("get_node", [nodeId], fileKey));
+    async ({ nodeId, fileKey, ...params }): Promise<ToolResult> => {
+      return renderResponse(() => node.sendWithParams("get_node", [nodeId], params, fileKey));
+    }
+  );
+
+  server.tool(
+    "get_prototype_connections",
+    "Read-only. List the prototype interactions on a node and all its descendants, including instance sublayers. Each reaction is Figma's own trigger and actions (navigate/swap/overlay/scroll-to/change-to, back, close, URL, set variable/mode, conditional blocks, media), with each destination resolved to its name, screen, and page, and variables and modes resolved to names. Also returns the page's flow starting points. Not available in FigJam. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_prototype_connections.shape,
+    async ({ nodeId, fileKey, ...params }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams(
+          "get_prototype_connections",
+          nodeId ? [nodeId] : undefined,
+          params,
+          fileKey
+        )
+      );
+    }
+  );
+
+  server.tool(
+    "trace_prototype_flow",
+    "Read-only. Follow prototype navigation breadth-first from a screen: returns the screens reached (with depth and the node that reached them) and every interaction edge with its source node, trigger, action, enclosing conditional branches, and destination screen. Screens reached again are marked as revisits; unresolvable destinations are listed. Not available in FigJam. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.trace_prototype_flow.shape,
+    async ({ nodeId, fileKey, ...params }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("trace_prototype_flow", [nodeId], params, fileKey)
+      );
     }
   );
 

@@ -71,6 +71,8 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `get_document`                 | Get the current Figma page document tree                                                                 |
 | `get_selection`                | Get the currently selected nodes in Figma                                                                |
 | `get_node`                     | Get a specific Figma node by ID (colon format, e.g. `4029:12345`)                                        |
+| `get_prototype_connections`    | Read prototype interactions on a node and its descendants                                                |
+| `trace_prototype_flow`         | Trace prototype navigation between screens                                                               |
 | `get_styles`                   | Get all local paint, text, effect, and grid styles                                                       |
 | `get_metadata`                 | Get file name, pages, and current page info                                                              |
 | `get_design_context`           | Get a depth-limited tree optimized for understanding design context                                      |
@@ -119,6 +121,13 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `delete_nodes`                 | Delete nodes with explicit confirmation                                                                  |
 
 All tools accept an optional `fileKey` parameter when multiple Figma files are connected. Use `list_files` to discover connected files and their keys.
+
+### Prototype Notes
+
+- Prototype tools are read-only and unavailable in FigJam. Set `includePrototype: true` on `get_node` to include the same interactions.
+- Reactions are Figma's own trigger and action data, with destinations, variables, and modes resolved to names.
+- Flow edges list their enclosing branch `conditions` from outermost to innermost (`null` marks an else branch).
+- Observed `AFTER_TIMEOUT` values are in seconds (for example, `0.8` for 800 ms).
 
 ### Editing Notes
 
