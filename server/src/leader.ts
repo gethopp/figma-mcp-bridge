@@ -2,6 +2,7 @@ import http from "node:http";
 import type { Duplex } from "node:stream";
 import { Bridge } from "./bridge.js";
 import { validateRpc } from "./schema.js";
+import { getComments, resolveCommentsFileKey } from "./comments.js";
 import { executeSaveScreenshots } from "./tools.js";
 import type { ExportFormat } from "./tools.js";
 import type { RPCRequest, RPCResponse } from "./types.js";
@@ -63,9 +64,10 @@ export class Leader {
         }
       });
 
-      server.listen(this.port, () => {
+      // Loopback-only: /rpc has no auth, so never expose it beyond this machine.
+      server.listen(this.port, "127.0.0.1", () => {
         this.server = server;
-        console.error(`Leader listening on :${this.port}`);
+        console.error(`Leader listening on 127.0.0.1:${this.port}`);
         resolve();
       });
     });
@@ -100,7 +102,69 @@ export class Leader {
         const validatedParams = validation.params ?? rpcReq.params;
         const fileKey = rpcReq.fileKey;
 
-        // Currently the only tool that is not forwarded to the plugin is save_screenshots
+        // Server-side tools that never reach the plugin: save_screenshots
+        // (needs local fs) and the comments tools (REST API — the plugin
+        // sandbox cannot read comments).
+        if (rpcReq.tool === "get_comments" || rpcReq.tool === "get_selection_comments") {
+          const params = validatedParams ?? {};
+          const connected = this.bridge.listConnectedFiles();
+          const resolvedKey = resolveCommentsFileKey(connected, fileKey);
+          let nodeIds = params.nodeIds as string[] | undefined;
+          if (rpcReq.tool === "get_selection_comments") {
+            // The REST key may differ from the bridge connection key, so look
+            // the selection up with the matching (or sole) connected key.
+            const selectionFileKey = connected.some((file) => file.fileKey === fileKey)
+              ? fileKey
+              : connected.length === 1
+                ? connected[0].fileKey
+                : fileKey;
+            const selection = await this.bridge.sendWithParams(
+              "get_selection",
+              undefined,
+              undefined,
+              selectionFileKey
+            );
+            if (selection.error) {
+              this.sendJSON(res, 200, { error: selection.error });
+              return;
+            }
+            const data = selection.data as Array<{ id?: unknown }> | undefined;
+            nodeIds = Array.isArray(data)
+              ? data.filter((n) => typeof n.id === "string").map((n) => n.id as string)
+              : [];
+            if (nodeIds.length === 0) {
+              this.sendJSON(res, 200, {
+                data: {
+                  fileKey: resolvedKey,
+                  total: 0,
+                  threads: [],
+                  message: "No nodes selected. Select one or more frames to read their comments.",
+                },
+              });
+              return;
+            }
+          }
+          try {
+            const result = await getComments(
+              {
+                fileKey: resolvedKey,
+                nodeIds,
+                includeResolved: params.includeResolved as boolean | undefined,
+                limit: params.limit as number | undefined,
+                asMd: params.asMd as boolean | undefined,
+              },
+              this.bridge.getFileToken(resolvedKey)
+            );
+            this.sendJSON(res, 200, { data: result });
+          } catch (err) {
+            this.sendJSON(res, 200, {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          return;
+        }
+
+        // Currently the only other tool that is not forwarded to the plugin is save_screenshots
         // If more are added we need to refactor to a better abstraction.
         if (rpcReq.tool === "save_screenshots") {
           const params = validatedParams ?? {};
