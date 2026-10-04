@@ -25,6 +25,11 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Branch tip rather than the dispatch SHA, so a re-run sees an already-pushed version bump.
+          ref: ${{ github.ref }}
+          # GITHUB_TOKEN cannot push past the branch protection on main.
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -37,7 +42,7 @@ jobs:
         with:
           bun-version: latest
 
-      # ── Server: install, build, publish ──────────────────────────────
+      # ── Server: install, build ───────────────────────────────────────
 
       - name: Install server dependencies
         working-directory: server
@@ -55,19 +60,6 @@ jobs:
             || { echo "ERROR: dist/index.js is missing the node shebang"; exit 1; }
           echo "✓ Shebang present in dist/index.js"
 
-      - name: Bundle README for npm
-        run: cp README.md server/README.md
-
-      - name: Set package version
-        working-directory: server
-        run: npm version ${{ inputs.version }} --no-git-tag-version
-
-      - name: Publish to npm (with provenance)
-        working-directory: server
-        run: npm publish --access public --provenance
-        # env:
-        #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       # ── Figma plugin: install, build ─────────────────────────────────
 
       - name: Install plugin dependencies
@@ -77,6 +69,37 @@ jobs:
       - name: Build Figma plugin
         working-directory: plugin
         run: bun run build
+
+      # ── Version bump: commit, then publish ───────────────────────────
+
+      - name: Set package versions
+        run: |
+          for dir in server plugin; do
+            (cd "$dir" && npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version)
+          done
+
+      - name: Commit and push version bump
+        id: bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/package.json plugin/package.json
+          if git diff --cached --quiet; then
+            echo "package.json versions already at ${{ inputs.version }}, nothing to commit"
+          else
+            git commit -m "chore(release): v${{ inputs.version }}"
+            git push origin "HEAD:${{ github.ref }}"
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Bundle README for npm
+        run: cp README.md server/README.md
+
+      - name: Publish to npm (with provenance)
+        working-directory: server
+        run: npm publish --access public --provenance
+        # env:
+        #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # ── Package GitHub release ───────────────────────────────────────
 
@@ -100,6 +123,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version }}
+          target_commitish: ${{ steps.bump.outputs.sha }}
           name: Release v${{ inputs.version }}
           generate_release_notes: true
           files: figma-mcp-bridge-v${{ inputs.version }}.zip
