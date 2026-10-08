@@ -1,6 +1,6 @@
 {
   "name": "@gethopp/figma-mcp-bridge",
-  "version": "0.1.1",
+  "version": "0.0.23",
   "description": "MCP server that bridges Figma plugin data to AI tools without hitting API rate limits",
   "type": "module",
   "bin": {
@@ -32,6 +32,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@figma/plugin-typings": "^1.140.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "ws": "^8.18.0",
     "zod": "^3.24.0"
