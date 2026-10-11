@@ -41,13 +41,13 @@ import {
   placeBelowInput,
   placeRightOfInput,
   duplicateWithOffsetInput,
+  MAX_SVG_BYTES,
   toolInputSchemas,
 } from "./schema.js";
 import type { BridgeResponse } from "./types.js";
 import { Follower } from "./follower.js";
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
-const MAX_SVG_BYTES = 2 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 15_000;
 const MAX_IMAGE_REDIRECTS = 5;
 
@@ -931,36 +931,37 @@ function resolveAndValidateOutputPath(outputPath: string, workspaceRoot: string)
   return resolvedPath;
 }
 
+const SVG_PROLOG_TOKENS: ReadonlyArray<readonly [open: string, close: string]> = [
+  ["<?xml", "?>"],
+  ["<!--", "-->"],
+  ["<!DOCTYPE", ">"],
+];
+
+function stripLeadingBomAndWhitespace(source: string): string {
+  return source.replace(/^\uFEFF/, "").trimStart();
+}
+
+/** File paths never start with `<`, so anything that does is treated as inline markup. */
+function isInlineMarkup(source: string): boolean {
+  return stripLeadingBomAndWhitespace(source).startsWith("<");
+}
+
 /**
- * Checks whether text has an SVG document element after the small XML prolog
- * subset commonly emitted by vector editors: an optional UTF-8 BOM, XML
- * declaration, and leading comments.
- *
- * XML 1.0 defines a document as a prolog followed by one document element,
- * with comments allowed in the prolog. SVG 2 defines `svg` as that root
- * element for a standalone SVG document:
- * https://www.w3.org/TR/xml/#NT-document
- * https://www.w3.org/TR/xml/#sec-comments
- * https://www.w3.org/TR/SVG2/struct.html#SVGElement
+ * Checks whether text has an `<svg>` root after the XML prolog vector editors
+ * emit: an optional BOM, XML declaration, comments, and DOCTYPE. This is a
+ * cheap pre-check for a clear error; Figma performs the full parse.
  */
 function hasSvgRoot(source: string): boolean {
-  let remainder = source.replace(/^\uFEFF/, "").trimStart();
-
-  if (remainder.startsWith("<?xml")) {
-    const declarationEnd = remainder.indexOf("?>");
-    if (declarationEnd === -1) return false;
-    remainder = remainder.slice(declarationEnd + 2).trimStart();
+  let rest = stripLeadingBomAndWhitespace(source);
+  for (;;) {
+    const token = SVG_PROLOG_TOKENS.find(([open]) => rest.startsWith(open));
+    if (!token) break;
+    const [open, close] = token;
+    const end = rest.indexOf(close, open.length);
+    if (end === -1) return false;
+    rest = rest.slice(end + close.length).trimStart();
   }
-
-  while (remainder.startsWith("<!--")) {
-    const commentEnd = remainder.indexOf("-->");
-    if (commentEnd === -1) return false;
-    remainder = remainder.slice(commentEnd + 3).trimStart();
-  }
-
-  if (!remainder.startsWith("<svg")) return false;
-  const tagNameBoundary = remainder[4];
-  return tagNameBoundary === ">" || tagNameBoundary === "/" || /\s/.test(tagNameBoundary);
+  return /^<svg[\s/>]/.test(rest);
 }
 
 /** Returns true when candidate is the root itself or a descendant of it. */
@@ -984,7 +985,7 @@ function isSameFile(opened: Stats, current: Stats): boolean {
 async function loadSvgSource(source: string, workspaceRoot: string): Promise<string> {
   let svgText: string;
 
-  if (hasSvgRoot(source)) {
+  if (isInlineMarkup(source)) {
     svgText = source;
   } else {
     const resolvedRoot = await realpath(path.resolve(workspaceRoot));

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { ShapeWithTextNode } from "@figma/plugin-typings/plugin-api-standalone.js";
 
+export const MAX_SVG_BYTES = 2 * 1024 * 1024;
+
 /**
  * Figma node IDs:
  *   - top-level node:        "4029:12345"
@@ -1221,7 +1223,14 @@ const createImageRpcInput = createImageInput.omit({ source: true, fileKey: true 
 });
 
 const createSvgRpcInput = createSvgInput.omit({ source: true, fileKey: true }).extend({
-  svgText: z.string().min(1).describe("SVG markup resolved from source by the tool handler"),
+  svgText: z
+    .string()
+    .min(1)
+    .refine(
+      (value) => Buffer.byteLength(value, "utf8") <= MAX_SVG_BYTES,
+      `SVG source exceeds the ${MAX_SVG_BYTES} byte bridge limit`
+    )
+    .describe("SVG markup resolved from source by the tool handler"),
 });
 
 /**
