@@ -2555,14 +2555,20 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           throw new Error("code is required for run_script");
         }
         // Cheap guard against accidental deletions; not a security boundary.
-        if (/\.remove\s*\(/.test(code) && request.params?.allowRemove !== true) {
+        if (/\.remove\s*(?:\?\.)?\s*\(/.test(code) && request.params?.allowRemove !== true) {
           throw new Error("run_script: code calls .remove(); pass allowRemove: true to confirm");
         }
         const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
         const result = await new AsyncFunction("figma", code)(figma);
         let serialized: string | undefined;
         try {
-          serialized = JSON.stringify(result);
+          // Symbols such as figma.mixed would otherwise be dropped or turned into null silently.
+          serialized = JSON.stringify(result, (_key, value: unknown) => {
+            if (typeof value === "symbol") {
+              throw new TypeError("symbol");
+            }
+            return value;
+          });
         } catch {
           throw new Error("run_script: return value must be JSON-serializable");
         }
