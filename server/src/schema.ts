@@ -1092,6 +1092,20 @@ export const toolInputSchemas = {
     fileKey: fileKeyField,
   }),
 
+  run_script: z.object({
+    code: z
+      .string()
+      .min(1)
+      .describe(
+        "Body of an async function run in the plugin sandbox with `figma` in scope. Use `return` to send a JSON-serializable result back."
+      ),
+    allowRemove: z
+      .boolean()
+      .optional()
+      .describe("Must be true when the code calls .remove(); otherwise the script is rejected"),
+    fileKey: fileKeyField,
+  }),
+
   save_screenshots: z.object({
     items: z
       .array(
@@ -1316,6 +1330,7 @@ const rpcToArgs: Record<
   set_selection: (nodeIds, params) => ({ nodeIds, ...params }),
   scroll_and_zoom_into_view: (nodeIds, params) => ({ nodeIds, ...params }),
   delete_nodes: (nodeIds, params) => ({ nodeIds, ...params }),
+  run_script: (_nodeIds, params) => ({ ...params }),
   save_screenshots: (_nodeIds, params) => ({ ...params }),
   get_motion_styles: (_nodeIds, params) => ({ ...params }),
   get_node_motion: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),

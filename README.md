@@ -120,6 +120,7 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `set_selection`                | Set the page selection to a list of node IDs (works in Dev Mode)                                         |
 | `scroll_and_zoom_into_view`    | Frame the viewport around the given nodes (works in Dev Mode)                                            |
 | `delete_nodes`                 | Delete nodes with explicit confirmation                                                                  |
+| `run_script`                   | Run Plugin API JavaScript in the plugin sandbox (opt-in, see Editing Notes)                              |
 
 All tools accept an optional `fileKey` parameter when multiple Figma files are connected. Use `list_files` to discover connected files and their keys.
 
@@ -140,6 +141,7 @@ All tools accept an optional `fileKey` parameter when multiple Figma files are c
 - `fit_to_content` works on SECTION nodes only (Figma's API exposes no equivalent for other containers): it shifts children so their bounding box starts at `padding` and resizes the section to bbox + 2×padding.
 - The current user must have permission to edit the target file.
 - `delete_nodes` is intentionally gated behind `confirm: true`.
+- `run_script` executes arbitrary JavaScript in the open file, so it is only registered when the MCP server runs with `FIGMA_BRIDGE_ENABLE_RUN_SCRIPT=1`. The code is the body of an async function with `figma` in scope, and its `return` value must be JSON-serializable. Code that calls `.remove()` is rejected unless `allowRemove: true` is passed; this guards against accidental deletions and is not a security boundary. The server stops waiting after 3 minutes, but a script stuck in a loop keeps the plugin busy until it is closed. Works in Figma and FigJam.
 - Text edits automatically load the fonts currently used by the target text node before applying the new content.
 - New text nodes default to `Inter Regular` unless a font is provided.
 - `create_image` reads local paths relative to the MCP server working directory unless you pass an absolute path.
