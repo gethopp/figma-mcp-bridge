@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { isIP } from "node:net";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Node } from "./node.js";
@@ -25,8 +26,27 @@ function resolvePort(): number {
 }
 const PORT = resolvePort();
 
+// The leader endpoints have no authentication and serve the open Figma
+// documents, so by default only processes on this machine can reach them.
+// Set an all-interfaces address (0.0.0.0 or ::) only when the plugin runs on
+// another host, such as a VM or container setup. Followers reach the leader
+// through localhost, so the address must include the loopback interface.
+function resolveHost(): string {
+  const raw = process.env.FIGMA_BRIDGE_HOST;
+  if (raw === undefined) return "127.0.0.1";
+  const host = raw.trim();
+  if (isIP(host) === 0) {
+    console.error(
+      `Invalid FIGMA_BRIDGE_HOST "${raw}" — expected an IP address such as 127.0.0.1 or 0.0.0.0`
+    );
+    process.exit(1);
+  }
+  return host;
+}
+const HOST = resolveHost();
+
 async function main(): Promise<void> {
-  const node = new Node(PORT);
+  const node = new Node(PORT, HOST);
   const election = new Election(PORT, node);
   await election.start();
 
