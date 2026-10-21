@@ -25,8 +25,29 @@ function resolvePort(): number {
 }
 const PORT = resolvePort();
 
+// The leader endpoints have no authentication and serve the open Figma
+// documents, so by default only processes on this machine can reach them.
+// Set an all-interfaces address (0.0.0.0 or ::) only when the plugin runs on
+// another host, such as a VM or container setup. Followers reach the leader
+// through localhost, so any address that localhost does not resolve to (a
+// LAN IP, or another 127.x address) would leave them unable to find it.
+const ALLOWED_HOSTS = ["127.0.0.1", "::1", "0.0.0.0", "::"];
+function resolveHost(): string {
+  const raw = process.env.FIGMA_BRIDGE_HOST;
+  if (raw === undefined) return "127.0.0.1";
+  const host = raw.trim();
+  if (!ALLOWED_HOSTS.includes(host)) {
+    console.error(
+      `Invalid FIGMA_BRIDGE_HOST "${raw}" — expected one of ${ALLOWED_HOSTS.join(", ")}`
+    );
+    process.exit(1);
+  }
+  return host;
+}
+const HOST = resolveHost();
+
 async function main(): Promise<void> {
-  const node = new Node(PORT);
+  const node = new Node(PORT, HOST);
   const election = new Election(PORT, node);
   await election.start();
 

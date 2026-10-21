@@ -241,6 +241,8 @@ The MCP server is the core of the Figma MCP Bridge. It maintains a registry of W
 - Forwarding responses back to the AI client
 - Handling leader election (as we can have only one WS connection to an MCP server at a time)
 
+The leader listens on `127.0.0.1` only. Its endpoints have no authentication, so other machines on the network must not reach them. If the plugin runs on another host (for example, the MCP server runs in a VM or a container), set `FIGMA_BRIDGE_HOST=0.0.0.0` (or `::`) in the MCP server environment. Use this only on a network that you trust.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           FIGMA (Desktop app)                               │
