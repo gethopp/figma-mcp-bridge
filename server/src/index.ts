@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { isIP } from "node:net";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Node } from "./node.js";
@@ -30,14 +29,16 @@ const PORT = resolvePort();
 // documents, so by default only processes on this machine can reach them.
 // Set an all-interfaces address (0.0.0.0 or ::) only when the plugin runs on
 // another host, such as a VM or container setup. Followers reach the leader
-// through localhost, so the address must include the loopback interface.
+// through localhost, so any address that localhost does not resolve to (a
+// LAN IP, or another 127.x address) would leave them unable to find it.
+const ALLOWED_HOSTS = ["127.0.0.1", "::1", "0.0.0.0", "::"];
 function resolveHost(): string {
   const raw = process.env.FIGMA_BRIDGE_HOST;
   if (raw === undefined) return "127.0.0.1";
   const host = raw.trim();
-  if (isIP(host) === 0) {
+  if (!ALLOWED_HOSTS.includes(host)) {
     console.error(
-      `Invalid FIGMA_BRIDGE_HOST "${raw}" — expected an IP address such as 127.0.0.1 or 0.0.0.0`
+      `Invalid FIGMA_BRIDGE_HOST "${raw}" — expected one of ${ALLOWED_HOSTS.join(", ")}`
     );
     process.exit(1);
   }

@@ -4,7 +4,8 @@ import { Role } from "./types.js";
 /**
  * Election handles leader detection and role transitions.
  *
- * On start it attempts to become leader (by binding the port).
+ * On start it becomes a follower if a healthy leader already answers.
+ * Otherwise it attempts to become leader (by binding the port).
  * If the port is taken and a healthy leader is found, it becomes a follower.
  * A periodic ticker monitors the leader and triggers takeover if it dies.
  */
@@ -63,7 +64,13 @@ export class Election {
   }
 
   private async determineRole(): Promise<void> {
-    // Try to become leader first
+    // Ping before binding: on macOS a leader bound to a different address
+    // (e.g. an older version on all interfaces) does not make our bind fail.
+    if (await this.pingLeader()) {
+      this.node.becomeFollower();
+      return;
+    }
+
     try {
       await this.node.becomeLeader();
       return;
