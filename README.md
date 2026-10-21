@@ -141,13 +141,31 @@ All tools accept an optional `fileKey` parameter when multiple Figma files are c
 - `fit_to_content` works on SECTION nodes only (Figma's API exposes no equivalent for other containers): it shifts children so their bounding box starts at `padding` and resizes the section to bbox + 2×padding.
 - The current user must have permission to edit the target file.
 - `delete_nodes` is intentionally gated behind `confirm: true`.
-- `run_script` executes arbitrary JavaScript in the open file, so it is only registered when the MCP server runs with `FIGMA_BRIDGE_ENABLE_RUN_SCRIPT=1`. The code is the body of an async function with `figma` in scope, and its `return` value must be JSON-serializable. Code that calls `.remove()` is rejected unless `allowRemove: true` is passed; this guards against accidental deletions and is not a security boundary. The server stops waiting after 3 minutes, but a script stuck in a loop keeps the plugin busy until it is closed. Works in Figma and FigJam.
+- `run_script` executes arbitrary JavaScript in the open file, so it is off unless the MCP server runs with `FIGMA_BRIDGE_ENABLE_RUN_SCRIPT=1` (see [Enabling `run_script`](#enabling-run_script)). The code is the body of an async function with `figma` in scope, and its `return` value must be JSON-serializable. Code that calls `.remove()` is rejected unless `allowRemove: true` is passed; this guards against accidental deletions and is not a security boundary. The server stops waiting after 3 minutes, but a script stuck in a loop keeps the plugin busy until it is closed. Works in Figma and FigJam.
 - Text edits automatically load the fonts currently used by the target text node before applying the new content.
 - New text nodes default to `Inter Regular` unless a font is provided.
 - `create_image` reads local paths relative to the MCP server working directory unless you pass an absolute path.
 - `create_svg` accepts raw `<svg>` markup or a local SVG path inside the MCP server working directory. SVG payloads are limited to 2 MiB.
 - `import_html_layers` takes a JSON file produced by [html-figma](https://github.com/sergcen/html-to-figma)'s browser `htmlToFigma()`. The path resolves relative to the MCP server working directory and must stay inside it, even when absolute. Everything lands inside one wrapper frame, and the response reports `layerCount` against `expectedLayerCount` so partial imports are visible.
 - `create_page` returns the new page's ID — pass it as `parentId` to `create_frame` / `create_text` / `create_shape` / `create_image` to author content on that page without switching the editor.
+
+### Enabling `run_script`
+
+`run_script` is off by default. To turn it on, add `FIGMA_BRIDGE_ENABLE_RUN_SCRIPT` to the server's `env` in your MCP configuration and restart your AI tool:
+
+```json
+{
+  "figma-bridge": {
+    "command": "npx",
+    "args": ["-y", "@gethopp/figma-mcp-bridge"],
+    "env": {
+      "FIGMA_BRIDGE_ENABLE_RUN_SCRIPT": "1"
+    }
+  }
+}
+```
+
+If several AI tools run the bridge at the same time, set the variable in each of their configurations. Only one bridge process talks to Figma at a time, and it rejects `run_script` unless it was started with the variable.
 
 ### What You Can Build
 

@@ -1,11 +1,24 @@
 import http from "node:http";
+import { BlockList } from "node:net";
 import type { Duplex } from "node:stream";
 import { Bridge } from "./bridge.js";
 import { validateRpc } from "./schema.js";
-import { executeSaveScreenshots } from "./tools.js";
+import { executeSaveScreenshots, isRunScriptEnabled } from "./tools.js";
 import type { ExportFormat } from "./tools.js";
 import type { RPCRequest, RPCResponse } from "./types.js";
 import { VERSION } from "./version.js";
+
+const loopback = new BlockList();
+loopback.addSubnet("127.0.0.0", 8, "ipv4");
+loopback.addAddress("::1", "ipv6");
+
+const isLoopbackRequest = (req: http.IncomingMessage): boolean => {
+  const { remoteAddress, remoteFamily } = req.socket;
+  return (
+    remoteAddress !== undefined &&
+    loopback.check(remoteAddress, remoteFamily === "IPv6" ? "ipv6" : "ipv4")
+  );
+};
 
 /**
  * Leader owns the WebSocket bridge to Figma and exposes HTTP endpoints for followers.
@@ -39,6 +52,13 @@ export class Leader {
         }
 
         if (req.url === "/rpc" && req.method === "POST") {
+          // Only follower processes on this machine may call /rpc: followers always reach
+          // the leader through localhost, even when FIGMA_BRIDGE_HOST exposes the port for
+          // the plugin. Browsers attach an Origin header to every POST; Node's fetch sends none.
+          if (req.headers.origin !== undefined || !isLoopbackRequest(req)) {
+            this.sendJSON(res, 403, { error: "Forbidden" });
+            return;
+          }
           this.handleRPC(req, res);
           return;
         }
@@ -87,6 +107,16 @@ export class Leader {
         if (rpcReq.tool === "list_files") {
           this.sendJSON(res, 200, {
             data: this.bridge.listConnectedFiles(),
+          });
+          return;
+        }
+
+        // Followers register run_script from their own env, so the leader, which owns
+        // the plugin connection, must enforce the opt-in as well.
+        if (rpcReq.tool === "run_script" && !isRunScriptEnabled()) {
+          this.sendJSON(res, 403, {
+            error:
+              "run_script is disabled: the bridge process connected to Figma was started without FIGMA_BRIDGE_ENABLE_RUN_SCRIPT=1. Set it in every MCP client config that runs the bridge, then restart them.",
           });
           return;
         }
