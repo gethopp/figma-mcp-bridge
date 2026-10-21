@@ -1437,7 +1437,11 @@ async function saveScreenshotItemToFile(
     }
 
     const screenshotExport = getSingleScreenshotExport(resp.data);
-    const bytesWritten = await writeBase64ToFile(screenshotExport.base64, resolvedOutputPath);
+    const bytesWritten = await writeBase64ToFile(
+      screenshotExport.base64,
+      resolvedOutputPath,
+      workspaceRoot
+    );
 
     return {
       index,
@@ -1463,15 +1467,48 @@ async function saveScreenshotItemToFile(
 
 /**
  * Writes base64-encoded bytes to a file, creating parent directories as needed.
+ * Rejects the write if symlink resolution places the target outside the workspace.
  * @param base64 - Base64-encoded file contents.
  * @param outputPath - Destination file path.
+ * @param workspaceRoot - Root directory that must contain the real destination.
  * @returns Number of bytes written.
  */
-async function writeBase64ToFile(base64: string, outputPath: string): Promise<number> {
+async function writeBase64ToFile(
+  base64: string,
+  outputPath: string,
+  workspaceRoot: string
+): Promise<number> {
   const bytes = Buffer.from(base64, "base64");
-  await mkdir(path.dirname(outputPath), { recursive: true });
+  const resolvedRoot = await realpath(path.resolve(workspaceRoot));
+  const outsideError = new Error(
+    `outputPath must be inside the MCP server working directory: ${resolvedRoot}`
+  );
+  const parentDir = path.dirname(outputPath);
+
+  let existingAncestor = parentDir;
+  for (;;) {
+    try {
+      existingAncestor = await realpath(existingAncestor);
+      break;
+    } catch (err) {
+      if (!isNodeError(err) || err.code !== "ENOENT") throw err;
+      const next = path.dirname(existingAncestor);
+      if (next === existingAncestor) throw err;
+      existingAncestor = next;
+    }
+  }
+  if (!isPathInside(existingAncestor, resolvedRoot)) {
+    throw outsideError;
+  }
+
+  await mkdir(parentDir, { recursive: true });
+  const realParentDir = await realpath(parentDir);
+  if (!isPathInside(realParentDir, resolvedRoot)) {
+    throw outsideError;
+  }
+
   try {
-    await writeFile(outputPath, bytes, { flag: "wx" });
+    await writeFile(path.join(realParentDir, path.basename(outputPath)), bytes, { flag: "wx" });
   } catch (err) {
     if (isNodeError(err) && err.code === "EEXIST") {
       throw new Error(`File already exists at outputPath: ${outputPath}`);
