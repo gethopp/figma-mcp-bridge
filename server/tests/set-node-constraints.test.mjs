@@ -7,7 +7,10 @@ const values = ["MIN", "MAX", "CENTER", "STRETCH", "SCALE"];
 
 test("accepts all native horizontal and vertical constraint values", () => {
   for (const value of values) {
-    assert.equal(setNodeConstraintsInput.safeParse({ nodeId: id, horizontal: value }).success, true);
+    assert.equal(
+      setNodeConstraintsInput.safeParse({ nodeId: id, horizontal: value }).success,
+      true
+    );
     assert.equal(setNodeConstraintsInput.safeParse({ nodeId: id, vertical: value }).success, true);
   }
 });
@@ -29,18 +32,30 @@ test("supports a batch of node IDs and an optional file key", () => {
 });
 
 test("rejects an empty target list or a request without any target", () => {
-  assert.equal(setNodeConstraintsInput.safeParse({ nodeIds: [], horizontal: "MIN" }).success, false);
+  assert.equal(
+    setNodeConstraintsInput.safeParse({ nodeIds: [], horizontal: "MIN" }).success,
+    false
+  );
   assert.equal(setNodeConstraintsInput.safeParse({ horizontal: "MIN" }).success, false);
 });
 
 test("rejects missing or invalid axis values", () => {
   assert.equal(setNodeConstraintsInput.safeParse({ nodeId: id }).success, false);
-  assert.equal(setNodeConstraintsInput.safeParse({ nodeId: id, horizontal: "LEFT" }).success, false);
-  assert.equal(setNodeConstraintsInput.safeParse({ nodeId: id, vertical: "BOTTOM" }).success, false);
+  assert.equal(
+    setNodeConstraintsInput.safeParse({ nodeId: id, horizontal: "LEFT" }).success,
+    false
+  );
+  assert.equal(
+    setNodeConstraintsInput.safeParse({ nodeId: id, vertical: "BOTTOM" }).success,
+    false
+  );
 });
 
 test("rejects malformed Figma node IDs", () => {
-  assert.equal(setNodeConstraintsInput.safeParse({ nodeId: "4029-12345", vertical: "CENTER" }).success, false);
+  assert.equal(
+    setNodeConstraintsInput.safeParse({ nodeId: "4029-12345", vertical: "CENTER" }).success,
+    false
+  );
 });
 
 test("exposes the new command in the MCP tool input schemas", () => {
