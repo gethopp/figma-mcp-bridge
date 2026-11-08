@@ -1209,15 +1209,26 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           if (!("constraints" in node)) {
             throw new Error(`Node does not support constraints: ${node.id} (${node.type})`);
           }
-          const parent = node.parent;
-          if (!parent || !["FRAME", "COMPONENT", "INSTANCE"].includes(parent.type)) {
-            throw new Error(
-              `Constraints require a frame, component, or instance parent: ${node.id} (parent: ${parent?.type ?? "none"})`
-            );
+          // Constraints are relative to the containing frame. Group and boolean
+          // operation nodes do not expose constraints themselves, but their
+          // descendants can still use them.
+          let containingFrame = node.parent;
+          while (
+            containingFrame &&
+            !["FRAME", "COMPONENT", "INSTANCE"].includes(containingFrame.type)
+          ) {
+            containingFrame = containingFrame.parent;
           }
+          if (!containingFrame) {
+            throw new Error(`Constraints require a containing frame: ${node.id}`);
+          }
+
+          // Direct children in Auto Layout must be absolutely positioned for
+          // constraints to take effect; do not implicitly change layoutPositioning.
           if (
-            "layoutMode" in parent &&
-            parent.layoutMode !== "NONE" &&
+            node.parent === containingFrame &&
+            "layoutMode" in containingFrame &&
+            containingFrame.layoutMode !== "NONE" &&
             (!("layoutPositioning" in node) || node.layoutPositioning !== "ABSOLUTE")
           ) {
             throw new Error(
