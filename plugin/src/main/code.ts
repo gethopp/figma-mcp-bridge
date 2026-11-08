@@ -19,6 +19,7 @@ type RequestType =
   | "set_text_content"
   | "set_text_properties"
   | "set_node_properties"
+  | "set_node_constraints"
   | "set_solid_fill"
   | "set_gradient_fill"
   | "set_effects"
@@ -395,6 +396,7 @@ const EDIT_REQUEST_TYPES = new Set<RequestType>([
   "set_text_content",
   "set_text_properties",
   "set_node_properties",
+  "set_node_constraints",
   "set_solid_fill",
   "set_gradient_fill",
   "set_effects",
@@ -1171,6 +1173,96 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
             updatedCount: results.length,
             results,
           },
+        };
+      }
+      case "set_node_constraints": {
+        if (isFigJam()) {
+          throw new Error("set_node_constraints is not available in FigJam");
+        }
+
+        const nodeIds = request.nodeIds ?? [];
+        if (nodeIds.length === 0) {
+          throw new Error("nodeIds is required for set_node_constraints");
+        }
+
+        const horizontal = request.params?.horizontal;
+        const vertical = request.params?.vertical;
+        const values = ["MIN", "MAX", "CENTER", "STRETCH", "SCALE"] as const;
+        type Axis = (typeof values)[number];
+        if (horizontal === undefined && vertical === undefined) {
+          throw new Error("At least one of horizontal or vertical must be provided");
+        }
+        if (horizontal !== undefined && !values.includes(horizontal as Axis)) {
+          throw new Error(`Invalid horizontal constraint: ${String(horizontal)}`);
+        }
+        if (vertical !== undefined && !values.includes(vertical as Axis)) {
+          throw new Error(`Invalid vertical constraint: ${String(vertical)}`);
+        }
+
+        // Preflight every node before writing to avoid partial batch updates
+        // caused by incompatible parents or unsupported node types.
+        const nodes = await Promise.all(nodeIds.map((id) => getSceneNodeById(id)));
+        type WritableConstraintsNode = SceneNode & {
+          constraints: { horizontal: Axis; vertical: Axis };
+        };
+        const targets = nodes.map((node): WritableConstraintsNode => {
+          if (!("constraints" in node)) {
+            throw new Error(`Node does not support constraints: ${node.id} (${node.type})`);
+          }
+          const parent = node.parent;
+          if (!parent || !["FRAME", "COMPONENT", "INSTANCE"].includes(parent.type)) {
+            throw new Error(
+              `Constraints require a frame, component, or instance parent: ${node.id} (parent: ${parent?.type ?? "none"})`
+            );
+          }
+          if (
+            "layoutMode" in parent &&
+            parent.layoutMode !== "NONE" &&
+            (!("layoutPositioning" in node) || node.layoutPositioning !== "ABSOLUTE")
+          ) {
+            throw new Error(
+              `Constraints are not effective for auto-layout children unless layoutPositioning is ABSOLUTE: ${node.id}`
+            );
+          }
+          return node as WritableConstraintsNode;
+        });
+
+        const previous = targets.map((node) => ({ ...node.constraints }));
+        let attemptedIndex = -1;
+        try {
+          for (let i = 0; i < targets.length; i++) {
+            attemptedIndex = i;
+            // Assigning native constraints does not resize or reposition the node.
+            targets[i].constraints = {
+              horizontal: (horizontal ?? previous[i].horizontal) as Axis,
+              vertical: (vertical ?? previous[i].vertical) as Axis,
+            };
+          }
+        } catch (err) {
+          // Roll back best-effort if Figma rejects a setter mid-batch.
+          for (let i = attemptedIndex; i >= 0; i--) {
+            try {
+              targets[i].constraints = previous[i];
+            } catch {
+              // Keep the original error; some nodes may prohibit reverting.
+            }
+          }
+          throw err;
+        }
+
+        const results = targets.map((node, index) => ({
+          nodeId: node.id,
+          nodeName: node.name,
+          previous: previous[index],
+          constraints: { ...node.constraints },
+        }));
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data:
+            results.length === 1
+              ? results[0]
+              : { updatedCount: results.length, results },
         };
       }
       case "set_solid_fill": {
