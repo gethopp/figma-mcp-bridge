@@ -170,6 +170,38 @@ export const setNodePropertiesInput = setNodePropertiesShape
     "At least one property must be provided"
   );
 
+
+/** Figma's native constraint values (UI: Left/Top=MIN, Right/Bottom=MAX, Left & Right/Top & Bottom=STRETCH). */
+const nodeConstraint = z.enum(["MIN", "MAX", "CENTER", "STRETCH", "SCALE"]);
+
+export const setNodeConstraintsShape = z.object({
+  nodeId: createFigmaNodeIdSchema()
+    .optional()
+    .describe("Single node to update. Required unless nodeIds is provided."),
+  nodeIds: z
+    .array(createFigmaNodeIdSchema())
+    .min(1)
+    .optional()
+    .describe("Optional batch of nodes to apply the same constraints."),
+  horizontal: nodeConstraint
+    .optional()
+    .describe("Horizontal: MIN (Left), MAX (Right), CENTER, STRETCH (Left & Right), SCALE."),
+  vertical: nodeConstraint
+    .optional()
+    .describe("Vertical: MIN (Top), MAX (Bottom), CENTER, STRETCH (Top & Bottom), SCALE."),
+  fileKey: fileKeyField,
+});
+
+export const setNodeConstraintsInput = setNodeConstraintsShape
+  .refine(
+    (value) => value.nodeId !== undefined || value.nodeIds !== undefined,
+    "Either nodeId or nodeIds is required"
+  )
+  .refine(
+    (value) => value.horizontal !== undefined || value.vertical !== undefined,
+    "At least one of horizontal or vertical must be provided"
+  );
+
 const solidFillTarget = z
   .enum(["fill", "stroke"])
   .optional()
@@ -1014,6 +1046,8 @@ export const toolInputSchemas = {
   ),
 
   set_node_properties: setNodePropertiesInput,
+
+  set_node_constraints: setNodeConstraintsInput,
 
   create_page: createPageInput,
 
