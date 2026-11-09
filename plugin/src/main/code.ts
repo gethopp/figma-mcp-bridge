@@ -162,6 +162,11 @@ const serializeVariableValue = (value: VariableValue): unknown => {
 const isSceneNode = (node: BaseNode | null): node is SceneNode =>
   node !== null && node.type !== "DOCUMENT" && node.type !== "PAGE";
 
+const CONSTRAINT_TYPES: readonly ConstraintType[] = ["MIN", "MAX", "CENTER", "STRETCH", "SCALE"];
+
+const isConstraintType = (value: unknown): value is ConstraintType =>
+  CONSTRAINT_TYPES.some((constraint) => constraint === value);
+
 const getSceneNodeById = async (nodeId: string): Promise<SceneNode> => {
   const node = await figma.getNodeByIdAsync(nodeId);
   if (!isSceneNode(node)) {
@@ -1187,25 +1192,20 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
 
         const horizontal = request.params?.horizontal;
         const vertical = request.params?.vertical;
-        const values = ["MIN", "MAX", "CENTER", "STRETCH", "SCALE"] as const;
-        type Axis = (typeof values)[number];
         if (horizontal === undefined && vertical === undefined) {
           throw new Error("At least one of horizontal or vertical must be provided");
         }
-        if (horizontal !== undefined && !values.includes(horizontal as Axis)) {
+        if (horizontal !== undefined && !isConstraintType(horizontal)) {
           throw new Error(`Invalid horizontal constraint: ${String(horizontal)}`);
         }
-        if (vertical !== undefined && !values.includes(vertical as Axis)) {
+        if (vertical !== undefined && !isConstraintType(vertical)) {
           throw new Error(`Invalid vertical constraint: ${String(vertical)}`);
         }
 
         // Preflight every node before writing to avoid partial batch updates
         // caused by incompatible parents or unsupported node types.
         const nodes = await Promise.all(nodeIds.map((id) => getSceneNodeById(id)));
-        type WritableConstraintsNode = SceneNode & {
-          constraints: { horizontal: Axis; vertical: Axis };
-        };
-        const targets = nodes.map((node): WritableConstraintsNode => {
+        const targets = nodes.map((node) => {
           if (!("constraints" in node)) {
             throw new Error(`Node does not support constraints: ${node.id} (${node.type})`);
           }
@@ -1215,7 +1215,9 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           let containingFrame = node.parent;
           while (
             containingFrame &&
-            !["FRAME", "COMPONENT", "INSTANCE"].includes(containingFrame.type)
+            containingFrame.type !== "FRAME" &&
+            containingFrame.type !== "COMPONENT" &&
+            containingFrame.type !== "INSTANCE"
           ) {
             containingFrame = containingFrame.parent;
           }
@@ -1227,7 +1229,6 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           // constraints to take effect; do not implicitly change layoutPositioning.
           if (
             node.parent === containingFrame &&
-            "layoutMode" in containingFrame &&
             containingFrame.layoutMode !== "NONE" &&
             (!("layoutPositioning" in node) || node.layoutPositioning !== "ABSOLUTE")
           ) {
@@ -1235,7 +1236,7 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
               `Constraints are not effective for auto-layout children unless layoutPositioning is ABSOLUTE: ${node.id}`
             );
           }
-          return node as WritableConstraintsNode;
+          return node;
         });
 
         const previous = targets.map((node) => ({ ...node.constraints }));
@@ -1245,8 +1246,8 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
             attemptedIndex = i;
             // Assigning native constraints does not resize or reposition the node.
             targets[i].constraints = {
-              horizontal: (horizontal ?? previous[i].horizontal) as Axis,
-              vertical: (vertical ?? previous[i].vertical) as Axis,
+              horizontal: horizontal ?? previous[i].horizontal,
+              vertical: vertical ?? previous[i].vertical,
             };
           }
         } catch (err) {
@@ -1270,10 +1271,7 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
         return {
           type: request.type,
           requestId: request.requestId,
-          data:
-            results.length === 1
-              ? results[0]
-              : { updatedCount: results.length, results },
+          data: results.length === 1 ? results[0] : { updatedCount: results.length, results },
         };
       }
       case "set_solid_fill": {
