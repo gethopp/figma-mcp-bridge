@@ -1331,6 +1331,7 @@ const rpcToArgs: Record<
     nodeId: nodeIds?.[0],
   }),
   set_node_properties: (nodeIds, params) => ({ nodeIds, ...params }),
+  set_node_constraints: (nodeIds, params) => ({ nodeIds, ...params }),
   set_gradient_fill: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   set_solid_fill: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   set_effects: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
