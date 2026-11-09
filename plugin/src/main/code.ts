@@ -1330,9 +1330,11 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
             ) {
               throw new Error(`Node does not support stroke styles: ${node.id} (${node.type})`);
             }
-            previousStyleId = node.strokeStyleId;
+            previousStyleId =
+              typeof node.strokeStyleId === "symbol" ? "mixed" : node.strokeStyleId;
             await node.setStrokeStyleIdAsync(style.id);
-            linkedStyleId = node.strokeStyleId;
+            linkedStyleId =
+              typeof node.strokeStyleId === "symbol" ? "mixed" : node.strokeStyleId;
           }
 
           if (linkedStyleId !== style.id) {
