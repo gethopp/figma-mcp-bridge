@@ -90,6 +90,7 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `set_text_content`             | Replace the contents of a text node (TEXT, FigJam sticky, or shape label)                                |
 | `set_text_properties`          | Patch font, size, alignment, auto-resize, color, and bounds on text nodes/sublayers                      |
 | `set_node_properties`          | Patch common node properties: name, position, size, visibility, opacity, corner radius (single or batch) |
+| `set_node_constraints`         | Set native Figma constraints (horizontal/vertical) for one or multiple compatible nodes                |
 | `set_solid_fill`               | Replace a node's fill or stroke with a single solid paint                                                |
 | `set_gradient_fill`            | Replace a node's fill or stroke with a linear/radial/angular/diamond gradient                            |
 | `set_effects`                  | Replace a node's effects list (drop/inner shadows, layer/background blurs)                               |
@@ -137,6 +138,7 @@ All tools accept an optional `fileKey` parameter when multiple Figma files are c
 - In **FigJam**, read tools plus the write tools (`set_text_content`, `set_text_properties`, `set_node_properties`, `set_solid_fill`, `create_text`, `create_shape`, `create_shape_with_text`, `create_sticky`, `create_connector`, `create_section`, `duplicate_nodes`, `duplicate_with_offset`, `fit_to_content`, `distribute_horizontally`, `distribute_vertically`, `align_to_grid`, `place_below`, `place_right_of`, `delete_nodes`, ...) are available. Auto-layout and motion/animation tools return a clear error in FigJam.
 - `set_text_content` / `set_text_properties` edit a TEXT node's content directly, or the text sublayer of a FigJam STICKY / SHAPE_WITH_TEXT node. Alignment and auto-resize are TEXT-node-only — they return a clear error on stickies and shapes (x/y/width/height still apply to the containing node).
 - `set_node_properties` accepts either `nodeId` or a `nodeIds` array to apply the same property changes to several nodes in one call.
+- `set_node_constraints` accepts `nodeId` or `nodeIds` with `horizontal` and/or `vertical` (`MIN`, `MAX`, `CENTER`, `STRETCH`, `SCALE`). `MIN` means Left/Top, `MAX` Right/Bottom, and `STRETCH` Left & Right/Top & Bottom. Unspecified axes are preserved. It requires nodes inside a Figma frame, component, or instance; Auto Layout children must use absolute positioning. It is unavailable in FigJam and Dev Mode. The response reports previous and applied constraints.
 - `set_auto_layout` targets frames; SECTION nodes have no auto-layout in Figma's API and return an explicit error.
 - `fit_to_content` works on SECTION nodes only (Figma's API exposes no equivalent for other containers): it shifts children so their bounding box starts at `padding` and resizes the section to bbox + 2×padding.
 - The current user must have permission to edit the target file.

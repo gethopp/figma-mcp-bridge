@@ -19,6 +19,7 @@ type RequestType =
   | "set_text_content"
   | "set_text_properties"
   | "set_node_properties"
+  | "set_node_constraints"
   | "set_solid_fill"
   | "set_gradient_fill"
   | "set_effects"
@@ -160,6 +161,11 @@ const serializeVariableValue = (value: VariableValue): unknown => {
 
 const isSceneNode = (node: BaseNode | null): node is SceneNode =>
   node !== null && node.type !== "DOCUMENT" && node.type !== "PAGE";
+
+const CONSTRAINT_TYPES: readonly ConstraintType[] = ["MIN", "MAX", "CENTER", "STRETCH", "SCALE"];
+
+const isConstraintType = (value: unknown): value is ConstraintType =>
+  CONSTRAINT_TYPES.some((constraint) => constraint === value);
 
 const getSceneNodeById = async (nodeId: string): Promise<SceneNode> => {
   const node = await figma.getNodeByIdAsync(nodeId);
@@ -395,6 +401,7 @@ const EDIT_REQUEST_TYPES = new Set<RequestType>([
   "set_text_content",
   "set_text_properties",
   "set_node_properties",
+  "set_node_constraints",
   "set_solid_fill",
   "set_gradient_fill",
   "set_effects",
@@ -1171,6 +1178,100 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
             updatedCount: results.length,
             results,
           },
+        };
+      }
+      case "set_node_constraints": {
+        if (isFigJam()) {
+          throw new Error("set_node_constraints is not available in FigJam");
+        }
+
+        const nodeIds = request.nodeIds ?? [];
+        if (nodeIds.length === 0) {
+          throw new Error("nodeIds is required for set_node_constraints");
+        }
+
+        const horizontal = request.params?.horizontal;
+        const vertical = request.params?.vertical;
+        if (horizontal === undefined && vertical === undefined) {
+          throw new Error("At least one of horizontal or vertical must be provided");
+        }
+        if (horizontal !== undefined && !isConstraintType(horizontal)) {
+          throw new Error(`Invalid horizontal constraint: ${String(horizontal)}`);
+        }
+        if (vertical !== undefined && !isConstraintType(vertical)) {
+          throw new Error(`Invalid vertical constraint: ${String(vertical)}`);
+        }
+
+        // Preflight every node before writing to avoid partial batch updates
+        // caused by incompatible parents or unsupported node types.
+        const nodes = await Promise.all(nodeIds.map((id) => getSceneNodeById(id)));
+        const targets = nodes.map((node) => {
+          if (!("constraints" in node)) {
+            throw new Error(`Node does not support constraints: ${node.id} (${node.type})`);
+          }
+          // Constraints are relative to the containing frame. Group and boolean
+          // operation nodes do not expose constraints themselves, but their
+          // descendants can still use them.
+          let containingFrame = node.parent;
+          while (
+            containingFrame &&
+            containingFrame.type !== "FRAME" &&
+            containingFrame.type !== "COMPONENT" &&
+            containingFrame.type !== "INSTANCE"
+          ) {
+            containingFrame = containingFrame.parent;
+          }
+          if (!containingFrame) {
+            throw new Error(`Constraints require a containing frame: ${node.id}`);
+          }
+
+          // Direct children in Auto Layout must be absolutely positioned for
+          // constraints to take effect; do not implicitly change layoutPositioning.
+          if (
+            node.parent === containingFrame &&
+            containingFrame.layoutMode !== "NONE" &&
+            (!("layoutPositioning" in node) || node.layoutPositioning !== "ABSOLUTE")
+          ) {
+            throw new Error(
+              `Constraints are not effective for auto-layout children unless layoutPositioning is ABSOLUTE: ${node.id}`
+            );
+          }
+          return node;
+        });
+
+        const previous = targets.map((node) => ({ ...node.constraints }));
+        let attemptedIndex = -1;
+        try {
+          for (let i = 0; i < targets.length; i++) {
+            attemptedIndex = i;
+            // Assigning native constraints does not resize or reposition the node.
+            targets[i].constraints = {
+              horizontal: horizontal ?? previous[i].horizontal,
+              vertical: vertical ?? previous[i].vertical,
+            };
+          }
+        } catch (err) {
+          // Roll back best-effort if Figma rejects a setter mid-batch.
+          for (let i = attemptedIndex; i >= 0; i--) {
+            try {
+              targets[i].constraints = previous[i];
+            } catch {
+              // Keep the original error; some nodes may prohibit reverting.
+            }
+          }
+          throw err;
+        }
+
+        const results = targets.map((node, index) => ({
+          nodeId: node.id,
+          nodeName: node.name,
+          previous: previous[index],
+          constraints: { ...node.constraints },
+        }));
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: results.length === 1 ? results[0] : { updatedCount: results.length, results },
         };
       }
       case "set_solid_fill": {

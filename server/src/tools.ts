@@ -20,6 +20,8 @@ import {
   createSectionShape,
   createTextInput,
   setNodePropertiesShape,
+  setNodeConstraintsShape,
+  setNodeConstraintsInput,
   setGradientFillInput,
   setSolidFillInput,
   setSolidFillShape,
@@ -303,6 +305,21 @@ export function registerTools(server: McpServer, node: Node, port: number): void
       const ids = nodeIds ?? (nodeId !== undefined ? [nodeId] : []);
       return renderResponse(() =>
         node.sendWithParams("set_node_properties", ids, properties, fileKey)
+      );
+    }
+  );
+
+  server.tool(
+    "set_node_constraints",
+    "Set native Figma horizontal and/or vertical constraints on layers inside frames, components, or instances. Values: MIN, MAX, CENTER, STRETCH, SCALE. Rejects incompatible Auto Layout children (unless absolute positioned) and FigJam nodes. Accepts nodeId or nodeIds, preserves the unspecified axis, and returns previous and applied constraints.",
+    setNodeConstraintsShape.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(setNodeConstraintsInput, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeId, nodeIds, fileKey, ...properties } = parsed.data;
+      const ids = nodeIds ?? (nodeId !== undefined ? [nodeId] : []);
+      return renderResponse(() =>
+        node.sendWithParams("set_node_constraints", ids, properties, fileKey)
       );
     }
   );
