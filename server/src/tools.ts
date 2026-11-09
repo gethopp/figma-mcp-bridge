@@ -22,6 +22,8 @@ import {
   setNodePropertiesShape,
   setNodeConstraintsShape,
   setNodeConstraintsInput,
+  applyPaintStyleShape,
+  applyPaintStyleInput,
   setGradientFillInput,
   setSolidFillInput,
   setSolidFillShape,
@@ -320,6 +322,21 @@ export function registerTools(server: McpServer, node: Node, port: number): void
       const ids = nodeIds ?? (nodeId !== undefined ? [nodeId] : []);
       return renderResponse(() =>
         node.sendWithParams("set_node_constraints", ids, properties, fileKey)
+      );
+    }
+  );
+
+  server.tool(
+    "apply_paint_style",
+    "Link an existing local Figma Paint Style to fills or strokes, preserving native style association. Supports nodeId or nodeIds; validates compatible nodes and returns verified style IDs with per-node errors for batches. Available in Figma Design, not FigJam or Dev Mode.",
+    applyPaintStyleShape.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(applyPaintStyleInput, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeId, nodeIds, fileKey, ...params } = parsed.data;
+      const ids = nodeIds ?? (nodeId !== undefined ? [nodeId] : []);
+      return renderResponse(() =>
+        node.sendWithParams("apply_paint_style", ids, params, fileKey)
       );
     }
   );
