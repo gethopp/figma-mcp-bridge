@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { setNodeConstraintsInput, toolInputSchemas } from "../dist/schema.js";
+import { setNodeConstraintsInput, toolInputSchemas, validateRpc } from "../dist/schema.js";
 
 const id = "4029:12345";
 const values = ["MIN", "MAX", "CENTER", "STRETCH", "SCALE"];
@@ -63,4 +63,31 @@ test("exposes the new command in the MCP tool input schemas", () => {
     toolInputSchemas.set_node_constraints.safeParse({ nodeId: id, horizontal: "SCALE" }).success,
     true
   );
+});
+
+test("follower RPC validates and forwards single-node constraints without leaking transport IDs", () => {
+  const response = validateRpc("set_node_constraints", [id], {
+    horizontal: "CENTER",
+    vertical: "STRETCH",
+  });
+  assert.deepEqual(response, {
+    error: null,
+    params: { horizontal: "CENTER", vertical: "STRETCH" },
+  });
+});
+
+test("follower RPC accepts batch updates and rejects invalid target IDs or axes", () => {
+  assert.deepEqual(
+    validateRpc("set_node_constraints", [id, "4029:12346"], { vertical: "MAX" }),
+    { error: null, params: { vertical: "MAX" } }
+  );
+  assert.notEqual(
+    validateRpc("set_node_constraints", ["invalid-id"], { horizontal: "MIN" }).error,
+    null
+  );
+  assert.notEqual(
+    validateRpc("set_node_constraints", [id], { horizontal: "LEFT" }).error,
+    null
+  );
+  assert.notEqual(validateRpc("set_node_constraints", [id], {}).error, null);
 });
