@@ -20,6 +20,7 @@ type RequestType =
   | "set_text_properties"
   | "set_node_properties"
   | "set_node_constraints"
+  | "apply_paint_style"
   | "set_solid_fill"
   | "set_gradient_fill"
   | "set_effects"
@@ -402,6 +403,7 @@ const EDIT_REQUEST_TYPES = new Set<RequestType>([
   "set_text_properties",
   "set_node_properties",
   "set_node_constraints",
+  "apply_paint_style",
   "set_solid_fill",
   "set_gradient_fill",
   "set_effects",
@@ -1272,6 +1274,110 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           type: request.type,
           requestId: request.requestId,
           data: results.length === 1 ? results[0] : { updatedCount: results.length, results },
+        };
+      }
+      case "apply_paint_style": {
+        if (figma.editorType !== "figma") {
+          throw new Error("apply_paint_style is only available in Figma Design");
+        }
+
+        const nodeIds = request.nodeIds ?? [];
+        if (nodeIds.length === 0) {
+          throw new Error("nodeIds is required for apply_paint_style");
+        }
+
+        const styleId = request.params?.styleId;
+        if (typeof styleId !== "string" || !styleId.trim()) {
+          throw new Error("styleId is required for apply_paint_style");
+        }
+        const target = request.params?.target ?? "fill";
+        if (target !== "fill" && target !== "stroke") {
+          throw new Error("target must be fill or stroke");
+        }
+
+        const style = await figma.getStyleByIdAsync(styleId);
+        if (!style || style.type !== "PAINT") {
+          throw new Error(`Paint Style not found: ${styleId}`);
+        }
+        const localStyles = await figma.getLocalPaintStylesAsync();
+        if (!localStyles.some((localStyle) => localStyle.id === style.id)) {
+          throw new Error(`Paint Style is not local to this file: ${styleId}`);
+        }
+
+        const applyToNode = async (nodeId: string) => {
+          const node = await getSceneNodeById(nodeId);
+          let previousStyleId: string | "mixed";
+          let linkedStyleId: string | "mixed";
+
+          if (target === "fill") {
+            if (
+              !("setFillStyleIdAsync" in node) ||
+              typeof node.setFillStyleIdAsync !== "function" ||
+              !("fillStyleId" in node)
+            ) {
+              throw new Error(`Node does not support fill styles: ${node.id} (${node.type})`);
+            }
+            previousStyleId =
+              typeof node.fillStyleId === "symbol" ? "mixed" : node.fillStyleId;
+            await node.setFillStyleIdAsync(style.id);
+            linkedStyleId =
+              typeof node.fillStyleId === "symbol" ? "mixed" : node.fillStyleId;
+          } else {
+            if (
+              !("setStrokeStyleIdAsync" in node) ||
+              typeof node.setStrokeStyleIdAsync !== "function" ||
+              !("strokeStyleId" in node)
+            ) {
+              throw new Error(`Node does not support stroke styles: ${node.id} (${node.type})`);
+            }
+            previousStyleId = node.strokeStyleId;
+            await node.setStrokeStyleIdAsync(style.id);
+            linkedStyleId = node.strokeStyleId;
+          }
+
+          if (linkedStyleId !== style.id) {
+            throw new Error(`Figma did not confirm the ${target} style link on ${node.id}`);
+          }
+          return {
+            nodeId: node.id,
+            nodeName: node.name,
+            target,
+            styleId: style.id,
+            styleName: style.name,
+            previousStyleId,
+            linkedStyleId,
+            verified: true,
+          };
+        };
+
+        if (nodeIds.length === 1) {
+          return {
+            type: request.type,
+            requestId: request.requestId,
+            data: await applyToNode(nodeIds[0]),
+          };
+        }
+
+        // Batch failures are independent, matching other per-item editing tools.
+        const results = [];
+        for (const nodeId of nodeIds) {
+          try {
+            results.push(await applyToNode(nodeId));
+          } catch (error) {
+            results.push({
+              nodeId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: {
+            updatedCount: results.filter((result) => "verified" in result).length,
+            failedCount: results.filter((result) => "error" in result).length,
+            results,
+          },
         };
       }
       case "set_solid_fill": {
