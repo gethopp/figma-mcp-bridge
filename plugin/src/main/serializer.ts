@@ -58,7 +58,9 @@ type SerializedStyles = {
   blendMode?: string;
   visible?: boolean;
   fills?: SerializedPaint[] | "mixed";
+  fillStyleId?: string | "mixed";
   strokes?: SerializedPaint[] | "mixed";
+  strokeStyleId?: string | "mixed";
   strokeWeight?: number | "mixed";
   strokeAlign?: string;
   dashPattern?: number[];
@@ -257,6 +259,12 @@ const serializeStyles = (node: SerializableNode): SerializedStyles => {
   }
   if ("strokes" in node) {
     styles.strokes = serializePaints(node.strokes);
+  }
+  if ("fillStyleId" in node) {
+    styles.fillStyleId = isMixed(node.fillStyleId) ? "mixed" : node.fillStyleId;
+  }
+  if ("strokeStyleId" in node) {
+    styles.strokeStyleId = node.strokeStyleId;
   }
   if ("strokeWeight" in node) {
     styles.strokeWeight = isMixed(node.strokeWeight) ? "mixed" : (node.strokeWeight as number);

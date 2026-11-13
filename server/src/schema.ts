@@ -202,6 +202,29 @@ export const setNodeConstraintsInput = setNodeConstraintsShape
     "At least one of horizontal or vertical must be provided"
   );
 
+/** Apply an existing local Figma Paint Style without flattening its style link. */
+export const applyPaintStyleShape = z.object({
+  nodeId: createFigmaNodeIdSchema()
+    .optional()
+    .describe("Single node ID. Provide nodeId or nodeIds."),
+  nodeIds: z
+    .array(createFigmaNodeIdSchema())
+    .min(1)
+    .optional()
+    .describe("Batch of nodes to link to the same local Paint Style."),
+  styleId: z.string().min(1).describe("Local Paint Style ID returned by get_styles."),
+  target: z
+    .enum(["fill", "stroke"])
+    .optional()
+    .describe("Apply style to fill or stroke (default fill)."),
+  fileKey: fileKeyField,
+});
+
+export const applyPaintStyleInput = applyPaintStyleShape.refine(
+  (value) => value.nodeId !== undefined || value.nodeIds !== undefined,
+  "Either nodeId or nodeIds is required"
+);
+
 const solidFillTarget = z
   .enum(["fill", "stroke"])
   .optional()
@@ -1049,6 +1072,8 @@ export const toolInputSchemas = {
 
   set_node_constraints: setNodeConstraintsInput,
 
+  apply_paint_style: applyPaintStyleInput,
+
   create_page: createPageInput,
 
   create_frame: createFrameInput.refine(
@@ -1332,6 +1357,7 @@ const rpcToArgs: Record<
   }),
   set_node_properties: (nodeIds, params) => ({ nodeIds, ...params }),
   set_node_constraints: (nodeIds, params) => ({ nodeIds, ...params }),
+  apply_paint_style: (nodeIds, params) => ({ nodeIds, ...params }),
   set_gradient_fill: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   set_solid_fill: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   set_effects: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
