@@ -58,7 +58,9 @@ type RequestType =
   | "remove_animation_style"
   | "apply_manual_keyframe_track"
   | "remove_manual_keyframe_track"
-  | "set_timeline_duration";
+  | "set_timeline_duration"
+  | "create_component_from_node"
+  | "combine_as_variants";
 
 type ServerRequestParams = Record<string, unknown> & {
   format?: "PNG" | "SVG" | "JPG" | "PDF";
@@ -438,6 +440,8 @@ const EDIT_REQUEST_TYPES = new Set<RequestType>([
   "apply_manual_keyframe_track",
   "remove_manual_keyframe_track",
   "set_timeline_duration",
+  "create_component_from_node",
+  "combine_as_variants",
 ]);
 
 const requireEditorMode = (toolName: RequestType): void => {
@@ -455,6 +459,14 @@ const requirePrototypes = (toolName: string): void => {
     throw new Error(`${toolName} is not available in FigJam (FigJam files have no prototypes)`);
   }
 };
+
+/**
+ * combine_as_variants layout. figma.combineAsVariants leaves every variant at (0,0)
+ * inside the new set, so the tool spaces them out; the padding keeps the set's
+ * border off the variants.
+ */
+const DEFAULT_VARIANT_GAP = 100;
+const VARIANT_SET_PADDING = 20;
 
 /** Read-only geometry, deliberately independent of screenshot export. */
 async function getLayoutTree(rootId: string, maxNodes = 2000) {
@@ -2693,6 +2705,145 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           data: {
             parentId,
             orphanIds: orphans.map((o) => o.id),
+          },
+        };
+      }
+      case "create_component_from_node": {
+        if (figma.editorType !== "figma") {
+          throw new Error("create_component_from_node is only available in Figma Design");
+        }
+        const nodeId = request.nodeIds?.[0];
+        if (!nodeId) {
+          throw new Error("nodeIds is required for create_component_from_node");
+        }
+
+        const node = await getSceneNodeById(nodeId);
+        // Restrictions documented on figma.createComponentFromNode, which otherwise
+        // fails with a generic "Cannot create component from node".
+        if (node.type === "COMPONENT" || node.type === "COMPONENT_SET") {
+          throw new Error(`create_component_from_node: ${nodeId} is already a ${node.type}`);
+        }
+        for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
+          if (
+            ancestor.type === "COMPONENT" ||
+            ancestor.type === "COMPONENT_SET" ||
+            ancestor.type === "INSTANCE"
+          ) {
+            throw new Error(
+              `create_component_from_node: ${nodeId} is inside a ${ancestor.type} (${ancestor.id}); move it out first`
+            );
+          }
+        }
+
+        const previousType = node.type;
+        const component = figma.createComponentFromNode(node);
+        const name = request.params?.name;
+        if (typeof name === "string") {
+          component.name = name;
+        }
+
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: {
+            previousNodeId: nodeId,
+            previousType,
+            nodeId: component.id,
+            nodeName: component.name,
+            parentId: component.parent?.id,
+            x: component.x,
+            y: component.y,
+            width: component.width,
+            height: component.height,
+          },
+        };
+      }
+      case "combine_as_variants": {
+        if (figma.editorType !== "figma") {
+          throw new Error("combine_as_variants is only available in Figma Design");
+        }
+        const nodeIds = request.nodeIds ?? [];
+        if (nodeIds.length < 2) {
+          throw new Error("combine_as_variants requires at least 2 nodeIds");
+        }
+
+        const nodes = await Promise.all(nodeIds.map((id) => getSceneNodeById(id)));
+        const components = nodes.filter((node): node is ComponentNode => node.type === "COMPONENT");
+        if (components.length !== nodes.length) {
+          const invalid = nodes
+            .filter((node) => node.type !== "COMPONENT")
+            .map((node) => `${node.id} (${node.type})`);
+          throw new Error(
+            `combine_as_variants requires COMPONENT nodes, got ${invalid.join(", ")}. Convert them with create_component_from_node first.`
+          );
+        }
+        const alreadyInSet = components.filter(
+          (component) => component.parent?.type === "COMPONENT_SET"
+        );
+        if (alreadyInSet.length > 0) {
+          throw new Error(
+            `combine_as_variants: ${alreadyInSet.map((component) => component.id).join(", ")} already belong to a Component Set`
+          );
+        }
+
+        const parentId = request.params?.parentId;
+        const parent =
+          typeof parentId === "string"
+            ? await getParentNodeById(parentId)
+            : (components[0].parent ?? figma.currentPage);
+        const set = figma.combineAsVariants(components, parent);
+        const name = request.params?.name;
+        if (typeof name === "string") {
+          set.name = name;
+        }
+
+        const layout = request.params?.layout === "COLUMN" ? "COLUMN" : "ROW";
+        const requestedGap = request.params?.gap;
+        const gap =
+          typeof requestedGap === "number" && requestedGap >= 0
+            ? requestedGap
+            : DEFAULT_VARIANT_GAP;
+        let offset = VARIANT_SET_PADDING;
+        let crossSize = 0;
+        for (const variant of set.children) {
+          if (layout === "ROW") {
+            variant.x = offset;
+            variant.y = VARIANT_SET_PADDING;
+            offset += variant.width + gap;
+            crossSize = Math.max(crossSize, variant.height);
+          } else {
+            variant.x = VARIANT_SET_PADDING;
+            variant.y = offset;
+            offset += variant.height + gap;
+            crossSize = Math.max(crossSize, variant.width);
+          }
+        }
+        const mainSize = offset - gap + VARIANT_SET_PADDING;
+        crossSize += VARIANT_SET_PADDING * 2;
+        set.resizeWithoutConstraints(
+          layout === "ROW" ? mainSize : crossSize,
+          layout === "ROW" ? crossSize : mainSize
+        );
+
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: {
+            componentSetId: set.id,
+            nodeName: set.name,
+            parentId: set.parent?.id,
+            layout,
+            gap,
+            variants: set.children.map((variant) => ({
+              nodeId: variant.id,
+              nodeName: variant.name,
+              x: variant.x,
+              y: variant.y,
+            })),
+            x: set.x,
+            y: set.y,
+            width: set.width,
+            height: set.height,
           },
         };
       }
