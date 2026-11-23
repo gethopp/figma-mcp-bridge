@@ -9,6 +9,7 @@ type RequestType =
   | "get_node"
   | "get_prototype_connections"
   | "trace_prototype_flow"
+  | "set_reactions"
   | "get_layout_tree"
   | "get_styles"
   | "get_metadata"
@@ -433,6 +434,7 @@ const EDIT_REQUEST_TYPES = new Set<RequestType>([
   "ungroup_node",
   "delete_nodes",
   "run_script",
+  "set_reactions",
   "apply_animation_style",
   "remove_animation_style",
   "apply_manual_keyframe_track",
@@ -579,6 +581,39 @@ const handleRequest = async (request: ServerRequest): Promise<PluginResponse> =>
           type: request.type,
           requestId: request.requestId,
           data: await tracePrototypeFlow(await getSceneNodeById(nodeId), request.params),
+        };
+      }
+      case "set_reactions": {
+        requirePrototypes(request.type);
+        const nodeId = request.nodeIds?.[0];
+        if (!nodeId) {
+          throw new Error("nodeIds is required for set_reactions");
+        }
+        const reactions = request.params?.reactions;
+        if (!Array.isArray(reactions)) {
+          throw new Error("reactions (array) is required for set_reactions");
+        }
+
+        const node = await getSceneNodeById(nodeId);
+        if (!("setReactionsAsync" in node)) {
+          throw new Error(
+            `set_reactions: node does not support reactions: ${node.id} (${node.type})`
+          );
+        }
+        const previousReactions = node.reactions;
+        // With documentAccess "dynamic-page" the `reactions` property is read-only;
+        // setReactionsAsync is the supported way to write it.
+        await node.setReactionsAsync(reactions);
+
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: {
+            nodeId: node.id,
+            nodeName: node.name,
+            previousReactions,
+            reactions: node.reactions,
+          },
         };
       }
       case "get_styles": {

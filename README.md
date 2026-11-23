@@ -73,6 +73,7 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `get_node`                     | Get a specific Figma node by ID (colon format, e.g. `4029:12345`)                                        |
 | `get_prototype_connections`    | Read prototype interactions on a node and its descendants                                                |
 | `trace_prototype_flow`         | Trace prototype navigation between screens                                                               |
+| `set_reactions`                | Replace the prototype interactions on a node (e.g. on-click navigation)                                  |
 | `get_styles`                   | Get all local paint, text, effect, and grid styles                                                       |
 | `get_metadata`                 | Get file name, pages, and current page info                                                              |
 | `get_design_context`           | Get a depth-limited tree optimized for understanding design context                                      |
@@ -128,7 +129,7 @@ All tools accept an optional `fileKey` parameter when multiple Figma files are c
 
 ### Prototype Notes
 
-- Prototype tools are read-only and unavailable in FigJam. Set `includePrototype: true` on `get_node` to include the same interactions.
+- `get_prototype_connections` and `trace_prototype_flow` are read-only; `set_reactions` writes reactions. All prototype tools are unavailable in FigJam. Set `includePrototype: true` on `get_node` to include the same interactions.
 - Reactions are Figma's own trigger and action data, with destinations, variables, and modes resolved to names.
 - Flow edges list their enclosing branch `conditions` from outermost to innermost (`null` marks an else branch).
 - Observed `AFTER_TIMEOUT` values are in seconds (for example, `0.8` for 800 ms).
@@ -142,6 +143,7 @@ All tools accept an optional `fileKey` parameter when multiple Figma files are c
 - `apply_paint_style` accepts `nodeId` or `nodeIds`, a local `styleId` from `get_styles`, and `target` (`fill` default, or `stroke`). It works in Figma Design only, applies the native style (replacing paints on the selected target), and reports the linked ID; a batch reports successes and per-node errors. `get_node` exposes `styles.fillStyleId` and `styles.strokeStyleId` for independent verification (an empty ID means unlinked; `mixed` means the property has mixed values across the node). It does not import shared libraries or style individual text ranges.
 - `set_node_constraints` accepts `nodeId` or `nodeIds` with `horizontal` and/or `vertical` (`MIN`, `MAX`, `CENTER`, `STRETCH`, `SCALE`). `MIN` means Left/Top, `MAX` Right/Bottom, and `STRETCH` Left & Right/Top & Bottom. Unspecified axes are preserved. It requires nodes inside a Figma frame, component, or instance; Auto Layout children must use absolute positioning. It is unavailable in FigJam and Dev Mode. The response reports previous and applied constraints.
 - `set_auto_layout` targets frames; SECTION nodes have no auto-layout in Figma's API and return an explicit error.
+- `set_reactions` replaces every reaction on one node with the given list (`[]` clears them) and returns `previousReactions` so the old set can be restored. Each reaction needs a `trigger` (or `null`) and at least one action; the server checks the trigger and action `type`s, and Figma validates the remaining fields and destinations. It is unavailable in FigJam and Dev Mode.
 - `fit_to_content` works on SECTION nodes only (Figma's API exposes no equivalent for other containers): it shifts children so their bounding box starts at `padding` and resizes the section to bbox + 2×padding.
 - The current user must have permission to edit the target file.
 - `delete_nodes` is intentionally gated behind `confirm: true`.
