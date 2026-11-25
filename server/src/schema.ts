@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { ShapeWithTextNode } from "@figma/plugin-typings/plugin-api-standalone.js";
+import type {
+  Action,
+  ShapeWithTextNode,
+  Trigger,
+} from "@figma/plugin-typings/plugin-api-standalone.js";
 
 export const MAX_SVG_BYTES = 2 * 1024 * 1024;
 
@@ -224,6 +228,53 @@ export const applyPaintStyleInput = applyPaintStyleShape.refine(
   (value) => value.nodeId !== undefined || value.nodeIds !== undefined,
   "Either nodeId or nodeIds is required"
 );
+
+const REACTION_TRIGGER_TYPES = [
+  "ON_CLICK",
+  "ON_HOVER",
+  "ON_PRESS",
+  "ON_DRAG",
+  "AFTER_TIMEOUT",
+  "MOUSE_UP",
+  "MOUSE_DOWN",
+  "MOUSE_ENTER",
+  "MOUSE_LEAVE",
+  "ON_KEY_DOWN",
+  "ON_MEDIA_HIT",
+  "ON_MEDIA_END",
+] as const satisfies readonly Trigger["type"][];
+
+const REACTION_ACTION_TYPES = [
+  "BACK",
+  "CLOSE",
+  "URL",
+  "UPDATE_MEDIA_RUNTIME",
+  "SET_VARIABLE",
+  "SET_VARIABLE_MODE",
+  "CONDITIONAL",
+  "NODE",
+] as const satisfies readonly Action["type"][];
+
+/**
+ * Only the discriminating `type` fields are checked here. Figma validates the
+ * rest of each trigger/action (destinations, transitions, ...) in
+ * setReactionsAsync and reports what is wrong.
+ */
+const reactionInput = z.object({
+  trigger: z
+    .object({ type: z.enum(REACTION_TRIGGER_TYPES) })
+    .passthrough()
+    .nullable()
+    .describe(
+      "What starts the interaction, e.g. { type: 'ON_CLICK' } or { type: 'AFTER_TIMEOUT', timeout: 0.8 } (seconds)."
+    ),
+  actions: z
+    .array(z.object({ type: z.enum(REACTION_ACTION_TYPES) }).passthrough())
+    .min(1)
+    .describe(
+      "Actions to run, e.g. [{ type: 'NODE', destinationId: '12:34', navigation: 'NAVIGATE', transition: null }] or [{ type: 'BACK' }]."
+    ),
+});
 
 const solidFillTarget = z
   .enum(["fill", "stroke"])
@@ -957,6 +1008,18 @@ export const toolInputSchemas = {
     fileKey: fileKeyField,
   }),
 
+  set_reactions: z.object({
+    nodeId: createFigmaNodeIdSchema().describe(
+      "Node to attach the prototype reactions to (e.g. a button, link, or card)."
+    ),
+    reactions: z
+      .array(reactionInput)
+      .describe(
+        "Complete list of reactions for the node. Replaces every existing reaction (pass [] to clear them); the response includes previousReactions so they can be restored."
+      ),
+    fileKey: fileKeyField,
+  }),
+
   trace_prototype_flow: z.object({
     nodeId: createFigmaNodeIdSchema().describe(
       "Screen (or any node inside one) to start from. Screen-to-screen navigation is followed breadth-first."
@@ -1383,6 +1446,7 @@ const rpcToArgs: Record<
   get_node: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   get_prototype_connections: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   trace_prototype_flow: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  set_reactions: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   get_styles: (_nodeIds, params) => ({ ...params }),
   get_metadata: (_nodeIds, params) => ({ ...params }),
   get_design_context: (_nodeIds, params) => ({ ...params }),

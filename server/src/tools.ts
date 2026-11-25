@@ -725,6 +725,18 @@ export function registerTools(server: McpServer, node: Node, port: number): void
   );
 
   server.tool(
+    "set_reactions",
+    "Set prototype reactions (interactions) on a node, e.g. on-click navigation to another frame or an on-hover overlay. Replaces ALL existing reactions on the node with the given list (pass [] to clear) and returns previousReactions so they can be restored. Each reaction needs a trigger (ON_CLICK, ON_HOVER, AFTER_TIMEOUT, ...) and at least one action (NODE, BACK, CLOSE, URL, ...); Figma validates the remaining fields and destinations. Available in Figma Design, not FigJam or Dev Mode.",
+    toolInputSchemas.set_reactions.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(toolInputSchemas.set_reactions, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeId, fileKey, ...params } = parsed.data;
+      return renderResponse(() => node.sendWithParams("set_reactions", [nodeId], params, fileKey));
+    }
+  );
+
+  server.tool(
     "set_selection",
     "Set the current page selection to a list of node IDs. Pass an empty array to clear the selection. Works in Figma design editor, Dev Mode, and FigJam.",
     setSelectionInput.shape,
