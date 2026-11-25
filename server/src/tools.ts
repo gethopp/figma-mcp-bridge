@@ -341,6 +341,34 @@ export function registerTools(server: McpServer, node: Node, port: number): void
   );
 
   server.tool(
+    "create_component_from_node",
+    "Convert an existing frame (or other eligible node) into a Figma Component in place, keeping its children, position, and size. The node ID changes, so use the returned nodeId afterwards. Rejects nodes that are already components or component sets, or that sit inside a component, component set, or instance. Use before combine_as_variants. Available in Figma Design, not FigJam or Dev Mode.",
+    toolInputSchemas.create_component_from_node.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(toolInputSchemas.create_component_from_node, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeId, fileKey, ...params } = parsed.data;
+      return renderResponse(() =>
+        node.sendWithParams("create_component_from_node", [nodeId], params, fileKey)
+      );
+    }
+  );
+
+  server.tool(
+    "combine_as_variants",
+    "Combine two or more Components into one Component Set (native Figma Variants). Each input must be a COMPONENT not already in a set; convert frames first with create_component_from_node. Component names like 'State=Hover' become variant properties. Figma stacks the variants at (0,0), so this tool lays them out in a row or column with the given gap and resizes the set to fit. Returns the set ID and each variant's ID and position. Available in Figma Design, not FigJam or Dev Mode.",
+    toolInputSchemas.combine_as_variants.shape,
+    async (args): Promise<ToolResult> => {
+      const parsed = parseToolInput(toolInputSchemas.combine_as_variants, args);
+      if (!parsed.success) return parsed.error;
+      const { nodeIds, fileKey, ...params } = parsed.data;
+      return renderResponse(() =>
+        node.sendWithParams("combine_as_variants", nodeIds, params, fileKey)
+      );
+    }
+  );
+
+  server.tool(
     "set_solid_fill",
     "Replace a node's fill (or stroke) with a single solid paint. Provide a hex color and optional paint opacity — fillHex/fillOpacity are accepted as aliases. Use set_gradient_fill for gradient paints.",
     setSolidFillShape.shape,

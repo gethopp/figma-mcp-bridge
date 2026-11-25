@@ -1274,6 +1274,45 @@ export const toolInputSchemas = {
       .describe("The new timeline duration in seconds (must be greater than zero)"),
     fileKey: fileKeyField,
   }),
+
+  create_component_from_node: z.object({
+    nodeId: createFigmaNodeIdSchema().describe(
+      "Frame (or other eligible node) to convert into a Component in place. It must not already be a component or component set, nor sit inside a component, component set, or instance."
+    ),
+    name: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Optional new name for the component. Use 'Property=Value' (e.g. 'State=Hover') to prepare it for combine_as_variants."
+      ),
+    fileKey: fileKeyField,
+  }),
+
+  combine_as_variants: z.object({
+    nodeIds: z
+      .array(createFigmaNodeIdSchema())
+      .min(2)
+      .describe(
+        "Component node IDs to combine into one Component Set. Each must be a COMPONENT that is not already in a set (convert frames with create_component_from_node first). Names such as 'State=Default' / 'State=Hover' become the variant properties."
+      ),
+    parentId: createFigmaNodeIdSchema()
+      .optional()
+      .describe(
+        "Optional parent for the new Component Set. Defaults to the parent of the first component."
+      ),
+    name: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional name for the Component Set, e.g. 'Button'."),
+    layout: z
+      .enum(["ROW", "COLUMN"])
+      .optional()
+      .describe("Direction used to lay out the variants inside the set (default ROW)."),
+    gap: z.number().min(0).optional().describe("Gap in pixels between variants (default 100)."),
+    fileKey: fileKeyField,
+  }),
 } as const;
 
 type ToolName = keyof typeof toolInputSchemas;
@@ -1400,6 +1439,8 @@ const rpcToArgs: Record<
   apply_manual_keyframe_track: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   remove_manual_keyframe_track: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   set_timeline_duration: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  create_component_from_node: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  combine_as_variants: (nodeIds, params) => ({ nodeIds, ...params }),
 };
 
 /**
