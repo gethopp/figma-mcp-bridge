@@ -1,9 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { lookup } from "node:dns/promises";
 import type { Stats } from "node:fs";
 import { mkdir, open, readFile, realpath, stat, writeFile } from "node:fs/promises";
-import { isIP } from "node:net";
+import http, { type IncomingMessage } from "node:http";
+import https from "node:https";
 import path from "node:path";
+import { useAgent } from "request-filtering-agent";
 import type { z } from "zod";
 import type { Node } from "./node.js";
 import {
@@ -335,9 +336,7 @@ export function registerTools(server: McpServer, node: Node, port: number): void
       if (!parsed.success) return parsed.error;
       const { nodeId, nodeIds, fileKey, ...params } = parsed.data;
       const ids = nodeIds ?? (nodeId !== undefined ? [nodeId] : []);
-      return renderResponse(() =>
-        node.sendWithParams("apply_paint_style", ids, params, fileKey)
-      );
+      return renderResponse(() => node.sendWithParams("apply_paint_style", ids, params, fileKey));
     }
   );
 
@@ -1202,152 +1201,109 @@ async function loadImageSourceAsBase64(source: string, workspaceRoot: string): P
  * @returns Raw image bytes.
  */
 async function fetchImageBytes(source: string): Promise<Buffer> {
-  let url = new URL(source);
+  const signal = AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS);
+  try {
+    return await downloadImage(new URL(source), signal);
+  } catch (err) {
+    if (signal.aborted) {
+      throw new Error(`Timed out fetching image after ${IMAGE_FETCH_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Follows redirects and reads the final image body.
+ * @param source - HTTP or HTTPS image URL.
+ * @param signal - Aborts the in-flight request and body read.
+ * @returns Raw image bytes.
+ */
+async function downloadImage(source: URL, signal: AbortSignal): Promise<Buffer> {
+  let url = source;
   let redirects = 0;
 
   while (true) {
-    await assertSafeHttpUrl(url);
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
-    let resp: Response;
+    const resp = await requestPublicImage(url, signal);
     try {
-      resp = await fetch(url, {
-        signal: controller.signal,
-        redirect: "manual",
-      });
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        throw new Error(`Timed out fetching image after ${IMAGE_FETCH_TIMEOUT_MS}ms`);
+      const status = resp.statusCode ?? 0;
+      if (status >= 300 && status < 400) {
+        const location = resp.headers.location;
+        if (!location) {
+          throw new Error(`Image redirect missing Location header: ${status}`);
+        }
+        redirects += 1;
+        if (redirects > MAX_IMAGE_REDIRECTS) {
+          throw new Error(`Image fetch exceeded ${MAX_IMAGE_REDIRECTS} redirects`);
+        }
+        url = new URL(location, url);
+        continue;
       }
-      throw err;
+
+      if (status < 200 || status >= 300) {
+        throw new Error(`Failed to fetch image: ${status} ${resp.statusMessage ?? ""}`);
+      }
+
+      const encoding = resp.headers["content-encoding"];
+      if (encoding && encoding !== "identity") {
+        throw new Error(`Unsupported image Content-Encoding: ${encoding}`);
+      }
+
+      const contentLength = resp.headers["content-length"];
+      if (contentLength !== undefined) {
+        const size = Number(contentLength);
+        if (!Number.isFinite(size) || size < 0) {
+          throw new Error("Invalid image Content-Length header");
+        }
+        if (size > MAX_IMAGE_BYTES) {
+          throw new Error(`Image exceeds ${MAX_IMAGE_BYTES} bytes`);
+        }
+      }
+
+      return await readBoundedResponse(resp, MAX_IMAGE_BYTES);
     } finally {
-      clearTimeout(timeout);
+      resp.destroy();
     }
-
-    if (resp.status >= 300 && resp.status < 400) {
-      const location = resp.headers.get("location");
-      if (!location) {
-        throw new Error(`Image redirect missing Location header: ${resp.status}`);
-      }
-      redirects += 1;
-      if (redirects > MAX_IMAGE_REDIRECTS) {
-        throw new Error(`Image fetch exceeded ${MAX_IMAGE_REDIRECTS} redirects`);
-      }
-      url = new URL(location, url);
-      continue;
-    }
-
-    if (!resp.ok) {
-      throw new Error(`Failed to fetch image: ${resp.status} ${resp.statusText}`);
-    }
-
-    const contentLength = resp.headers.get("content-length");
-    if (contentLength !== null) {
-      const size = Number(contentLength);
-      if (!Number.isFinite(size) || size < 0) {
-        throw new Error("Invalid image Content-Length header");
-      }
-      if (size > MAX_IMAGE_BYTES) {
-        throw new Error(`Image exceeds ${MAX_IMAGE_BYTES} bytes`);
-      }
-    }
-
-    return readBoundedResponse(resp, MAX_IMAGE_BYTES);
   }
 }
 
 /**
- * Validates that an image URL uses a safe public HTTP(S) endpoint.
- * @param url - URL to validate.
+ * Sends a GET request that can only connect to public addresses. The request-filtering agent
+ * checks literal IPs and every DNS answer at connect time, which also defeats DNS rebinding.
+ * @param url - HTTP or HTTPS URL to request.
+ * @param signal - Aborts the request.
+ * @returns The response, with its body not yet read.
  */
-async function assertSafeHttpUrl(url: URL): Promise<void> {
+async function requestPublicImage(url: URL, signal: AbortSignal): Promise<IncomingMessage> {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Image URL must use http or https");
   }
-  if (!url.hostname) {
-    throw new Error("Image URL must include a hostname");
-  }
 
-  const hostname = normalizeHostname(url.hostname);
-  const literalIp = isIP(hostname);
-  if (literalIp !== 0) {
-    if (isBlockedIp(hostname)) {
-      throw new Error("Image URL resolves to a blocked internal address");
-    }
-    return;
-  }
-
-  const addresses = await lookup(hostname, { all: true, verbatim: true });
-  if (addresses.length === 0) {
-    throw new Error("Image URL hostname did not resolve");
-  }
-  if (addresses.some((address) => isBlockedIp(address.address))) {
-    throw new Error("Image URL resolves to a blocked internal address");
-  }
-}
-
-/**
- * Checks whether an IP address is in a private, loopback, or otherwise blocked range.
- * @param address - IPv4 or IPv6 address string.
- * @returns True if the address is blocked for SSRF protection.
- */
-function isBlockedIp(address: string): boolean {
-  if (isIP(address) === 4) {
-    const [a, b] = address.split(".").map(Number);
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      a >= 224
-    );
-  }
-
-  const normalized = address.toLowerCase();
-  if (normalized.startsWith("::ffff:")) {
-    return isBlockedIp(normalized.slice("::ffff:".length));
-  }
-
-  return (
-    normalized === "::" ||
-    normalized === "::1" ||
-    normalized.startsWith("fc") ||
-    normalized.startsWith("fd") ||
-    /^fe[89ab]:/.test(normalized) ||
-    normalized.startsWith("ff")
-  );
-}
-
-/**
- * Strips surrounding brackets from an IPv6 hostname so it can be parsed as an IP.
- * @param hostname - Hostname string, possibly bracketed.
- * @returns Normalized hostname without brackets.
- */
-function normalizeHostname(hostname: string): string {
-  if (hostname.startsWith("[") && hostname.endsWith("]")) {
-    return hostname.slice(1, -1);
-  }
-  return hostname;
+  const client = url.protocol === "https:" ? https : http;
+  return new Promise((resolve, reject) => {
+    client
+      .get(
+        url,
+        {
+          agent: useAgent(url.href),
+          signal,
+          headers: { "accept-encoding": "identity", "user-agent": "figma-mcp-bridge" },
+        },
+        resolve
+      )
+      .on("error", reject);
+  });
 }
 
 /**
  * Reads a response body up to a maximum byte limit.
- * @param resp - Fetch response with a readable body.
+ * @param resp - HTTP response with an unread body.
  * @param maxBytes - Maximum number of bytes to accept.
  * @returns Concatenated response bytes.
  */
-async function readBoundedResponse(resp: Response, maxBytes: number): Promise<Buffer> {
-  if (!resp.body) {
-    return Buffer.alloc(0);
-  }
-
+async function readBoundedResponse(resp: IncomingMessage, maxBytes: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let total = 0;
-  for await (const chunk of resp.body) {
+  for await (const chunk of resp) {
     const bytes = Buffer.from(chunk);
     total += bytes.length;
     if (total > maxBytes) {

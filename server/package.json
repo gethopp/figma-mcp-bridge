@@ -34,6 +34,7 @@
   "dependencies": {
     "@figma/plugin-typings": "^1.140.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "request-filtering-agent": "^3.3.1",
     "ws": "^8.18.0",
     "zod": "^3.24.0"
   },
